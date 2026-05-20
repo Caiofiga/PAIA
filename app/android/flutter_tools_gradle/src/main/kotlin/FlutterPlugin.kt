@@ -51,7 +51,7 @@ class FlutterPlugin : Plugin<Project> {
             addTaskForLockfileGeneration(rootProject)
         }
 
-        val flutterRootSystemVal: String? = System.getenv("FLUTTER_ROOT") ?: "/usr/bin/flutter"
+        val flutterRootSystemVal: String? = System.getenv("FLUTTER_ROOT")
         val flutterRootPath: String =
             resolveFlutterSdkProperty(flutterRootSystemVal)
                 ?: throw GradleException(
@@ -205,7 +205,7 @@ class FlutterPlugin : Plugin<Project> {
 
         val flutterExecutableName = getExecutableNameForPlatform("flutter")
         flutterExecutable =
-            Paths.get("/usr", "bin", flutterExecutableName).toFile()
+            Paths.get(flutterRoot!!.absolutePath, "bin", flutterExecutableName).toFile()
 
         // Validate that the provided Gradle, Java, AGP, and KGP versions are all within our
         // supported range.

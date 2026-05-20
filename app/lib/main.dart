@@ -88,7 +88,7 @@ class _RootScreenState extends State<_RootScreen> {
         unselectedItemColor: const Color(0xFF546E7A),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.monitor_heart), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.folder_open), label: 'Sessions'),
+          BottomNavigationBarItem(icon: Icon(Icons.folder_open), label: 'Sessões'),
         ],
       ),
     );

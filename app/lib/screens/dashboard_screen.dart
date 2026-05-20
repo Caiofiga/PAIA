@@ -12,9 +12,9 @@ import 'package:paia/widgets/return_table.dart';
 
 const int _maxPts = 300;
 
-enum _OnboardStep { name, placement, questionnaire }
+enum _OnboardStep { name, placement, pse, spasticity }
 
-// ── PSE helpers ───────────────────────────────────────────────────────────────
+// ── PSE color ─────────────────────────────────────────────────────────────────
 
 Color _pseColor(int v) {
   if (v <= 1) return const Color(0xFF42A5F5);
@@ -25,30 +25,7 @@ Color _pseColor(int v) {
   return const Color(0xFFEF5350);
 }
 
-String _pseLabel(int v) => switch (v) {
-  1     => 'Atividade Muito Leve',
-  2     => 'Atividade Leve',
-  3     => 'Atividade Leve',
-  4     => 'Atividade Moderada',
-  5     => 'Atividade Moderada',
-  6     => 'Atividade Moderada',
-  7     => 'Atividade Vigorosa',
-  8     => 'Atividade Vigorosa',
-  9     => 'Atividade Muito Difícil',
-  10    => 'Esforço Máximo',
-  _     => '',
-};
-
-// ── Spasticity helpers ────────────────────────────────────────────────────────
-
-String _spasticityEmoji(int v) {
-  if (v <= 1) return '😄';
-  if (v <= 3) return '🙂';
-  if (v <= 5) return '😐';
-  if (v <= 7) return '😟';
-  if (v <= 9) return '😢';
-  return '😭';
-}
+// ── Spasticity color ──────────────────────────────────────────────────────────
 
 Color _spasticityColor(int v) {
   if (v <= 2) return const Color(0xFF66BB6A);
@@ -96,7 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool   _calibrated      = false;
   double _calibProgress   = 0.0;
   double _calibTheta      = 0.0;
-  String _staticMsg       = 'Stand still — gravity calibration';
+  String _staticMsg       = 'Fique imóvel — calibração de gravidade';
 
   // Live telemetry
   double _theta = 0, _omega = 0, _accelNorm = 0;
@@ -144,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('UDP error: $e')));
+          SnackBar(content: Text('Erro UDP: $e')));
       }
     }
   }
@@ -202,7 +179,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── Onboarding: entry points ──────────────────────────────────────────────
 
-  /// Called by intro START button.
   void _beginOnboarding() {
     setState(() {
       _started     = true;
@@ -210,14 +186,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  /// Called by "⊕ New Session" / "⊕ Start" button.
   void _newSession() {
     setState(() {
       _onboardStep = _OnboardStep.name;
     });
   }
 
-  /// Called when user confirms the questionnaire — actually starts session.
   Future<void> _commitSession() async {
     final meta = SessionMetadata(
       athleteName: _nameCtrl.text.trim().isEmpty ? 'Atleta' : _nameCtrl.text.trim(),
@@ -266,13 +240,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(child: LiveChart(
                       spots: List.of(_thetaPts),
                       lineColor: const Color(0xFF42A5F5),
-                      title: 'TIBIA ANGLE θ (°)',
+                      title: 'ÂNGULO TÍBIA θ (°)',
                     )),
                     const SizedBox(width: 10),
                     Expanded(child: LiveChart(
                       spots: List.of(_omegaPts),
                       lineColor: const Color(0xFF66BB6A),
-                      title: 'ANGULAR VELOCITY ω (°/s)',
+                      title: 'VELOCIDADE ANGULAR ω (°/s)',
                     )),
                   ]),
                   const SizedBox(height: 10),
@@ -290,8 +264,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildNameScreen()
           else if (_onboardStep == _OnboardStep.placement)
             _buildPlacementScreen()
-          else if (_onboardStep == _OnboardStep.questionnaire)
-            _buildQuestionnaireScreen()
+          else if (_onboardStep == _OnboardStep.pse)
+            _buildPseScreen()
+          else if (_onboardStep == _OnboardStep.spasticity)
+            _buildSpasticityScreen()
           else if (!_staticCalibDone)
             _buildStaticCalibOverlay()
           else if (!_calibrated)
@@ -307,7 +283,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Row(
       children: [
         _chip(
-          _connected ? '● Connected' : '● Connecting',
+          _connected ? '● Conectado' : '● A conectar...',
           _connected ? const Color(0xFF1B5E20) : const Color(0xFF263238),
           _connected ? const Color(0xFFA5D6A7) : const Color(0xFF90A4AE),
         ),
@@ -325,7 +301,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           ),
-          child: Text(widget.session.isActive ? '⊕ New Session' : '⊕ Start',
+          child: Text(widget.session.isActive ? '⊕ Nova Sessão' : '⊕ Iniciar',
             style: const TextStyle(fontSize: 12)),
         ),
       ],
@@ -336,7 +312,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_retDeviations == null) {
       return _chip('—', const Color(0xFF263238), const Color(0xFF90A4AE));
     }
-    if (_alert) return _chip('⚠ ALERT', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
+    if (_alert) return _chip('⚠ ALERTA', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
     return _chip('OK', const Color(0xFF1B5E20), const Color(0xFFA5D6A7));
   }
 
@@ -353,19 +329,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       color: const Color(0xFFB71C1C),
       borderRadius: BorderRadius.circular(4),
     ),
-    child: const Text('⚠ DETERIORATION DETECTED — ≥2 params beyond 2σ',
+    child: const Text('⚠ DETERIORAÇÃO DETETADA — ≥2 parâmetros além de 2σ',
       style: TextStyle(fontWeight: FontWeight.bold)),
   );
 
   Widget _buildReadouts() => Wrap(
     spacing: 8, runSpacing: 8,
     children: [
-      ReadoutCard(label: 'θ TIBIA ANGLE',     value: _theta.toStringAsFixed(1),     unit: '°'),
-      ReadoutCard(label: 'ω ANG. VELOCITY',   value: _omega.toStringAsFixed(1),     unit: '°/s'),
-      ReadoutCard(label: '|a| ACCEL NORM',    value: _accelNorm.toStringAsFixed(3), unit: 'g'),
-      ReadoutCard(label: 'ωpico LAST STRIDE', value: _wPico.toStringAsFixed(1),     unit: '°/s'),
-      ReadoutCard(label: 'τst% LAST STRIDE',  value: _tau.toStringAsFixed(1),       unit: '%'),
-      ReadoutCard(label: 'αatq LAST STRIDE',  value: _aAtq.toStringAsFixed(1),      unit: '°'),
+      ReadoutCard(label: 'θ ÂNGULO TÍBIA',    value: _theta.toStringAsFixed(1),     unit: '°'),
+      ReadoutCard(label: 'ω VEL. ANGULAR',    value: _omega.toStringAsFixed(1),     unit: '°/s'),
+      ReadoutCard(label: '|a| NORMA ACEL',    value: _accelNorm.toStringAsFixed(3), unit: 'g'),
+      ReadoutCard(label: 'ωpico ÚLT. PASSADA', value: _wPico.toStringAsFixed(1),   unit: '°/s'),
+      ReadoutCard(label: 'τst% ÚLT. PASSADA', value: _tau.toStringAsFixed(1),      unit: '%'),
+      ReadoutCard(label: 'αatq ÚLT. PASSADA', value: _aAtq.toStringAsFixed(1),     unit: '°'),
     ],
   );
 
@@ -381,11 +357,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('LAST RETURN SUMMARY',
+          const Text('ÚLTIMO RETORNO',
             style: TextStyle(fontSize: 11, color: Color(0xFF78909C), letterSpacing: 1.0)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            _statBox('Returns', '$_returnCount'),
+            _statBox('Retornos', '$_returnCount'),
             _statBox('ωpico', _retWPico != 0 ? '${_retWPico.toStringAsFixed(1)} °/s' : '—'),
             _statBox('τst%',  _retTau   != 0 ? '${_retTau.toStringAsFixed(1)} %'     : '—'),
             _statBox('αatq',  _retAAtq  != 0 ? '${_retAAtq.toStringAsFixed(1)} °'    : '—'),
@@ -425,7 +401,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold,
               color: Color(0xFF42A5F5), letterSpacing: 4)),
           const SizedBox(height: 8),
-          const Text('Biomechanical Running Monitor',
+          const Text('Monitor Biomecânico de Corrida',
             style: TextStyle(fontSize: 14, color: Color(0xFF78909C))),
           const SizedBox(height: 52),
           ElevatedButton(
@@ -436,12 +412,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 52, vertical: 18),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
-            child: const Text('START',
+            child: const Text('INICIAR',
               style: TextStyle(fontSize: 20, letterSpacing: 3, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 28),
           Text(
-            _connected ? '● Sensor connected' : '● Waiting for sensor…',
+            _connected ? '● Sensor conectado' : '● Aguardando sensor...',
             style: TextStyle(fontSize: 12,
               color: _connected ? const Color(0xFFA5D6A7) : const Color(0xFF546E7A)),
           ),
@@ -462,7 +438,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _onboardHeader('1 / 3', 'Atleta'),
+              _onboardHeader('1 / 4', 'Atleta'),
               const SizedBox(height: 32),
               TextField(
                 controller: _nameCtrl,
@@ -508,7 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _onboardHeader('2 / 3', 'Posicionamento do Sensor'),
+              _onboardHeader('2 / 4', 'Posicionamento do Sensor'),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(24),
@@ -519,9 +495,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 child: Column(
                   children: [
-                    const Icon(Icons.accessibility_new,
-                      size: 80, color: Color(0xFF42A5F5)),
-                    const SizedBox(height: 16),
+                    ColorFiltered(
+                      // Maps white bg → #1E1E1E, black lines → #42A5F5
+                      colorFilter: const ColorFilter.matrix([
+                        -0.141, 0,      0,      0, 66,
+                         0,    -0.529,  0,      0, 165,
+                         0,     0,     -0.843,  0, 245,
+                         0,     0,      0,      1, 0,
+                      ]),
+                      child: Image.asset(
+                        'assets/images/sensor_placement.png',
+                        height: 180,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     const Text('Fixe o sensor na tíbia',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
                         color: Color(0xFFCFD8DC)),
@@ -549,7 +536,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              _nextButton('PRÓXIMO →', _goQuestionnaire),
+              _nextButton('PRÓXIMO →', _goPse),
             ],
           ),
         ),
@@ -557,95 +544,202 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
   );
 
-  void _goQuestionnaire() => setState(() => _onboardStep = _OnboardStep.questionnaire);
+  void _goPse() => setState(() => _onboardStep = _OnboardStep.pse);
 
-  // ── Onboarding: Step 3 — Fatigue Questionnaire ────────────────────────────
+  // ── Onboarding: Step 3 — PSE ───────────────────────────────────────────────
 
-  Widget _buildQuestionnaireScreen() => Positioned.fill(
-    child: Container(
-      color: Colors.black87,
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+  Widget _buildPseScreen() {
+    final options = [
+      (v: 1,  color: _pseColor(1),  label: 'ATIVIDADE MUITO LEVE',
+        desc: 'Quase nenhum esforço, mas mais do que dormir, ver TV, etc.'),
+      (v: 2,  color: _pseColor(2),  label: 'ATIVIDADE LEVE',
+        desc: 'Parece que podemos manter durante horas. Fácil de respirar e manter uma conversa.'),
+      (v: 3,  color: _pseColor(3),  label: 'ATIVIDADE LEVE',
+        desc: 'Parece que podemos manter durante horas. Fácil de respirar e manter uma conversa.'),
+      (v: 4,  color: _pseColor(4),  label: 'ATIVIDADE MODERADA',
+        desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+      (v: 5,  color: _pseColor(5),  label: 'ATIVIDADE MODERADA',
+        desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+      (v: 6,  color: _pseColor(6),  label: 'ATIVIDADE MODERADA',
+        desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+      (v: 7,  color: _pseColor(7),  label: 'ATIVIDADE VIGOROSA',
+        desc: 'No limite do desconfortável. Falta de ar, consigo falar uma frase.'),
+      (v: 8,  color: _pseColor(8),  label: 'ATIVIDADE VIGOROSA',
+        desc: 'No limite do desconfortável. Falta de ar, consigo falar uma frase.'),
+      (v: 9,  color: _pseColor(9),  label: 'ATIVIDADE MUITO DIFÍCIL',
+        desc: 'Muito difícil manter a intensidade do exercício. Mal consigo respirar e falar apenas algumas palavras.'),
+      (v: 10, color: _pseColor(10), label: 'ATIVIDADE DE ESFORÇO MÁXIMO',
+        desc: 'É quase impossível continuar. Completamente sem fôlego, incapaz de falar. Não é possível manter por mais tempo.'),
+    ];
+    return _buildScaleScreen(
+      step:        '3 / 4',
+      title:       'Escala PSE',
+      subtitle:    'Percepção Subjetiva do Esforço — como foi a última atividade?',
+      options:     options.map((o) => (v: o.v, color: o.color, label: o.label, desc: o.desc)).toList(),
+      selected:    _pse,
+      onSelect:    (v) => setState(() => _pse = v),
+      buttonLabel: 'PRÓXIMO →',
+      onNext:      _goSpasticity,
+    );
+  }
+
+  void _goSpasticity() => setState(() => _onboardStep = _OnboardStep.spasticity);
+
+  // ── Onboarding: Step 4 — Spasticity ───────────────────────────────────────
+
+  Widget _buildSpasticityScreen() {
+    final options = [
+      (v: 0,  color: _spasticityColor(0),  label: 'SEM ESPASTICIDADE',
+        desc: 'Nenhuma rigidez ou resistência ao movimento.'),
+      (v: 1,  color: _spasticityColor(1),  label: 'ESPASTICIDADE MÍNIMA',
+        desc: 'Ligeira resistência ao movimento. Quase imperceptível.'),
+      (v: 2,  color: _spasticityColor(2),  label: 'ESPASTICIDADE MÍNIMA',
+        desc: 'Ligeira resistência ao movimento. Quase imperceptível.'),
+      (v: 3,  color: _spasticityColor(3),  label: 'ESPASTICIDADE LEVE',
+        desc: 'Resistência notável, mas não interfere significativamente nas atividades.'),
+      (v: 4,  color: _spasticityColor(4),  label: 'ESPASTICIDADE LEVE',
+        desc: 'Resistência notável, mas não interfere significativamente nas atividades.'),
+      (v: 5,  color: _spasticityColor(5),  label: 'ESPASTICIDADE MODERADA',
+        desc: 'Resistência moderada ao movimento. Pode causar algum desconforto.'),
+      (v: 6,  color: _spasticityColor(6),  label: 'ESPASTICIDADE MODERADA',
+        desc: 'Resistência moderada ao movimento. Pode causar algum desconforto.'),
+      (v: 7,  color: _spasticityColor(7),  label: 'ESPASTICIDADE SEVERA',
+        desc: 'Resistência forte. Movimento significativamente limitado.'),
+      (v: 8,  color: _spasticityColor(8),  label: 'ESPASTICIDADE SEVERA',
+        desc: 'Resistência forte. Movimento significativamente limitado.'),
+      (v: 9,  color: _spasticityColor(9),  label: 'ESPASTICIDADE MUITO SEVERA',
+        desc: 'Resistência extrema. Movimento muito difícil.'),
+      (v: 10, color: _spasticityColor(10), label: 'ESPASTICIDADE MUITO SEVERA',
+        desc: 'Resistência extrema. Movimento muito difícil ou impossível.'),
+    ];
+    return _buildScaleScreen(
+      step:        '4 / 4',
+      title:       'Espasticidade',
+      subtitle:    'Rigidez percebida hoje — selecione o nível que melhor descreve.',
+      options:     options.map((o) => (v: o.v, color: o.color, label: o.label, desc: o.desc)).toList(),
+      selected:    _spasticity,
+      onSelect:    (v) => setState(() => _spasticity = v),
+      buttonLabel: 'INICIAR SESSÃO →',
+      onNext:      _commitSession,
+    );
+  }
+
+  // ── Shared scale-list screen ───────────────────────────────────────────────
+
+  Widget _buildScaleScreen({
+    required String step,
+    required String title,
+    required String subtitle,
+    required List<({int v, Color color, String label, String desc})> options,
+    required int selected,
+    required void Function(int) onSelect,
+    required String buttonLabel,
+    required VoidCallback onNext,
+  }) {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black87,
+        child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _onboardHeader('3 / 3', 'Como está se sentindo hoje?'),
-              const SizedBox(height: 28),
-
-              // ── PSE section ──────────────────────────────────────────────
-              _sectionLabel('Escala PSE — Percepção Subjetiva do Esforço'),
-              const SizedBox(height: 4),
-              Text(_pseLabel(_pse),
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold,
-                  color: _pseColor(_pse)),
-                textAlign: TextAlign.center),
-              const SizedBox(height: 10),
-              _scaleSelector(
-                count: 10,
-                startAt: 1,
-                selected: _pse,
-                colorFn: _pseColor,
-                onTap: (v) => setState(() => _pse = v),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _onboardHeader(step, title),
+                    const SizedBox(height: 6),
+                    Text(subtitle,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF78909C))),
+                  ],
+                ),
               ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Muito Leve', style: TextStyle(fontSize: 10, color: Color(0xFF78909C))),
-                  Text('Máximo',     style: TextStyle(fontSize: 10, color: Color(0xFF78909C))),
-                ],
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: options.map((opt) {
+                    final isSel = opt.v == selected;
+                    return GestureDetector(
+                      onTap: () => onSelect(opt.v),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isSel
+                              ? opt.color.withAlpha(35)
+                              : const Color(0xFF1A1A1A),
+                          border: Border.all(
+                            color: isSel ? opt.color : const Color(0xFF2C2C2C),
+                            width: isSel ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40, height: 40,
+                              decoration: BoxDecoration(
+                                color: isSel
+                                    ? opt.color
+                                    : opt.color.withAlpha(55),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text('${opt.v}',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSel ? Colors.black87 : opt.color,
+                                )),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(opt.label,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSel
+                                          ? opt.color
+                                          : const Color(0xFFCFD8DC),
+                                    )),
+                                  const SizedBox(height: 2),
+                                  Text(opt.desc,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF78909C),
+                                      height: 1.4,
+                                    )),
+                                ],
+                              ),
+                            ),
+                            if (isSel) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.check_circle,
+                                color: opt.color, size: 20),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
-
-              const SizedBox(height: 28),
-
-              // ── Spasticity section ───────────────────────────────────────
-              _sectionLabel('Espasticidade / Rigidez Percebida'),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_spasticityEmoji(_spasticity),
-                    style: const TextStyle(fontSize: 28)),
-                  const SizedBox(width: 8),
-                  Text(
-                    _spasticity == 0
-                      ? 'Nenhuma rigidez'
-                      : _spasticity <= 3 ? 'Rigidez leve'
-                      : _spasticity <= 6 ? 'Rigidez moderada'
-                      : _spasticity <= 8 ? 'Rigidez severa'
-                      : 'Pior rigidez possível',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold,
-                      color: _spasticityColor(_spasticity)),
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: _nextButton(buttonLabel, onNext),
               ),
-              const SizedBox(height: 10),
-              _scaleSelector(
-                count: 11,
-                startAt: 0,
-                selected: _spasticity,
-                colorFn: _spasticityColor,
-                onTap: (v) => setState(() => _spasticity = v),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Nenhuma', style: TextStyle(fontSize: 10, color: Color(0xFF78909C))),
-                  Text('Pior',   style: TextStyle(fontSize: 10, color: Color(0xFF78909C))),
-                ],
-              ),
-
-              const SizedBox(height: 36),
-              _nextButton('INICIAR SESSÃO →', _commitSession),
-              const SizedBox(height: 12),
             ],
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   // ── Onboarding shared widgets ─────────────────────────────────────────────
 
@@ -661,53 +755,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           color: Color(0xFFCFD8DC))),
     ],
   );
-
-  Widget _sectionLabel(String text) => Text(text,
-    style: const TextStyle(fontSize: 12, color: Color(0xFF78909C),
-      letterSpacing: 0.8),
-    textAlign: TextAlign.center);
-
-  Widget _scaleSelector({
-    required int count,
-    required int startAt,
-    required int selected,
-    required Color Function(int) colorFn,
-    required void Function(int) onTap,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(count, (i) {
-        final val    = startAt + i;
-        final isSel  = val == selected;
-        final color  = colorFn(val);
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => onTap(val),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              height: 40,
-              decoration: BoxDecoration(
-                color: isSel ? color : color.withAlpha(50),
-                border: Border.all(
-                  color: isSel ? color : Colors.transparent,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              alignment: Alignment.center,
-              child: Text('$val',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                  color: isSel ? Colors.black87 : color,
-                )),
-            ),
-          ),
-        );
-      }),
-    );
-  }
 
   Widget _nextButton(String label, VoidCallback onPressed) => ElevatedButton(
     onPressed: onPressed,
@@ -765,7 +812,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center),
           const SizedBox(height: 8),
-          const Text('Atleta caminhe até a pista (~40 passadas)',
+          const Text('Atleta caminhe até à pista (~40 passadas)',
             style: TextStyle(fontSize: 13, color: Color(0xFF78909C)),
             textAlign: TextAlign.center),
           const SizedBox(height: 20),

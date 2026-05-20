@@ -89,17 +89,17 @@ class _SessionsScreenState extends State<SessionsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Delete sessions',
+        title: const Text('Eliminar sessões',
           style: TextStyle(color: Color(0xFFCFD8DC))),
-        content: Text('Delete $count session${count > 1 ? 's' : ''}? This cannot be undone.',
+        content: Text('Eliminar $count sess${count > 1 ? 'ões' : 'ão'}? Esta ação não pode ser desfeita.',
           style: const TextStyle(color: Color(0xFF90A4AE))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel')),
+            child: const Text('Cancelar')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF9A9A)),
-            child: const Text('Delete')),
+            child: const Text('Eliminar')),
         ],
       ),
     );
@@ -122,12 +122,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 icon: const Icon(Icons.close, color: Color(0xFF78909C)),
                 onPressed: _exitSelect,
               ),
-              title: Text('${_selected.length} selected',
+              title: Text('${_selected.length} selecionados',
                 style: const TextStyle(fontSize: 15, color: Color(0xFFCFD8DC))),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.select_all, color: Color(0xFF78909C)),
-                  tooltip: 'Select all',
+                  tooltip: 'Selecionar tudo',
                   onPressed: () => setState(() {
                     _selected.addAll(_sessions.map((s) => s.fileName));
                   }),
@@ -136,7 +136,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
             )
           : AppBar(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('Sessions',
+              title: const Text('Sessões',
                 style: TextStyle(fontSize: 16, color: Color(0xFF90CAF9))),
               actions: [
                 IconButton(
@@ -155,13 +155,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   children: [
                     TextButton.icon(
                       icon: const Icon(Icons.share, size: 18),
-                      label: const Text('Export'),
+                      label: const Text('Exportar'),
                       onPressed: _selected.isEmpty ? null : _exportSelected,
                       style: TextButton.styleFrom(foregroundColor: const Color(0xFF42A5F5)),
                     ),
                     TextButton.icon(
                       icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Delete'),
+                      label: const Text('Eliminar'),
                       onPressed: _selected.isEmpty ? null : _deleteSelected,
                       style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF9A9A)),
                     ),
@@ -173,7 +173,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _sessions.isEmpty
-              ? const Center(child: Text('No sessions saved yet.',
+              ? const Center(child: Text('Nenhuma sessão guardada.',
                   style: TextStyle(color: Color(0xFF546E7A))))
               : ListView.builder(
                   padding: const EdgeInsets.all(12),
@@ -287,7 +287,7 @@ class _SessionCard extends StatelessWidget {
                       Row(children: [
                         Text(session.displayLabel,
                           style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
-                        Text('  ·  ${session.strideCount} strides',
+                        Text('  ·  ${session.strideCount} passadas',
                           style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
                         if (session.metadata != null) ...[
                           Text('  ·  PSE ${session.metadata!.pse}',
@@ -301,7 +301,7 @@ class _SessionCard extends StatelessWidget {
                   if (!selecting)
                     IconButton(
                       icon: const Icon(Icons.share, size: 20, color: Color(0xFF78909C)),
-                      tooltip: 'Export CSV',
+                      tooltip: 'Exportar CSV',
                       onPressed: () => Share.shareXFiles(
                         [XFile(session.filePath)], subject: session.fileName),
                     ),
@@ -490,26 +490,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         padding: const EdgeInsets.all(12),
         children: [
           Wrap(spacing: 8, runSpacing: 8, children: [
-            _readout('STRIDES',    '${strides.length}',             ''),
-            _readout('ωpico last', last != null ? last.omegaPico.toStringAsFixed(1) : '—', '°/s'),
-            _readout('τst% last',  last != null ? last.tauStPct.toStringAsFixed(1)  : '—', '%'),
-            _readout('αatq last',  last != null ? last.alphaAtq.toStringAsFixed(1)  : '—', '°'),
+            _readout('PASSADAS',   '${strides.length}',             ''),
+            _readout('ωpico últ.', last != null ? last.omegaPico.toStringAsFixed(1) : '—', '°/s'),
+            _readout('τst% últ.',  last != null ? last.tauStPct.toStringAsFixed(1)  : '—', '%'),
+            _readout('αatq últ.',  last != null ? last.alphaAtq.toStringAsFixed(1)  : '—', '°'),
             if (widget.record.metadata != null) ...[
               _readout('PSE',          '${widget.record.metadata!.pse}',         '/10'),
               _readout('ESPASTICIDADE', '${widget.record.metadata!.spasticity}', '/10'),
             ],
-            _readout('RETURNS',    '${returns.length}', ''),
+            _readout('RETORNOS',   '${returns.length}', ''),
           ]),
           const SizedBox(height: 12),
-          _chart('ωpico — PEAK ANGULAR VELOCITY (°/s)',
+          _chart('ωpico — VEL. ANGULAR DE PICO (°/s)',
             strides.map((s) => FlSpot(s.stride.toDouble(), s.omegaPico)).toList(),
             const Color(0xFF42A5F5)),
           const SizedBox(height: 10),
-          _chart('τst% — STANCE TIME (%)',
+          _chart('τst% — TEMPO DE APOIO (%)',
             strides.map((s) => FlSpot(s.stride.toDouble(), s.tauStPct)).toList(),
             const Color(0xFF66BB6A)),
           const SizedBox(height: 10),
-          _chart('αatq — ATTACK ANGLE (°)',
+          _chart('αatq — ÂNGULO DE ATAQUE (°)',
             strides.map((s) => FlSpot(s.stride.toDouble(), s.alphaAtq)).toList(),
             const Color(0xFFFFA726)),
           const SizedBox(height: 12),

@@ -42,15 +42,28 @@ class LiveChart extends StatelessWidget {
                     dotData: const FlDotData(show: false),
                   )],
                   gridData: const FlGridData(show: false),
-                  titlesData: const FlTitlesData(
+                  titlesData: FlTitlesData(
                     leftTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: true, reservedSize: 36,
-                        getTitlesWidget: _leftTitle)),
-                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 36,
+                        getTitlesWidget: (v, meta) {
+                          if (v == meta.min || v == meta.max) {
+                            return const SizedBox.shrink();
+                          }
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            child: Text(v.toStringAsFixed(0),
+                              style: const TextStyle(fontSize: 9,
+                                color: Color(0xFF78909C))),
+                          );
+                        },
+                      )),
+                    bottomTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
-                    topTitles: AxisTitles(
+                    topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(
+                    rightTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
                   ),
                   borderData: FlBorderData(show: false),
@@ -61,7 +74,4 @@ class LiveChart extends StatelessWidget {
     );
   }
 
-  static Widget _leftTitle(double v, TitleMeta m) =>
-    Text(v.toStringAsFixed(0),
-      style: const TextStyle(fontSize: 9, color: Color(0xFF78909C)));
 }

@@ -78,6 +78,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<PipelineResult>? _sub;
+  Timer? _connTimer;
+  DateTime? _lastPacketTime;
   bool _connected = false;
 
   // ── App-level state ───────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _connTimer?.cancel();
     _sub?.cancel();
     widget.udp.dispose();
     // ignore: discarded_futures
@@ -129,8 +132,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _startUdp() async {
     try {
       await widget.udp.start();
-      setState(() => _connected = true);
       _sub = widget.udp.results.listen(_onResult);
+      // Poll connection status: connected = packet received within last 3 s
+      _connTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!mounted) return;
+        final isConnected = _lastPacketTime != null &&
+            DateTime.now().difference(_lastPacketTime!) <
+                const Duration(seconds: 3);
+        if (isConnected != _connected) setState(() => _connected = isConnected);
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -141,6 +151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onResult(PipelineResult r) {
     if (!mounted) return;
+    _lastPacketTime = DateTime.now();
     setState(() {
       if (r.type == PipelineType.staticCalib) {
         _calibProgress = r.calibProgress;

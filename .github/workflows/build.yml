@@ -26,6 +26,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Write local.properties (pin flutter.sdk for Gradle)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+
       - name: Install dependencies
         working-directory: ${{ env.WORKING_DIR }}
         run: flutter pub get

@@ -261,9 +261,14 @@ class _SessionCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        Text(session.displayLabel,
-                          style: const TextStyle(fontSize: 14,
-                            fontWeight: FontWeight.bold, color: Color(0xFFCFD8DC))),
+                        Expanded(
+                          child: Text(
+                            session.metadata?.athleteName ?? session.displayLabel,
+                            style: const TextStyle(fontSize: 14,
+                              fontWeight: FontWeight.bold, color: Color(0xFFCFD8DC)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         if (isActive) ...[
                           const SizedBox(width: 8),
                           Container(
@@ -279,8 +284,18 @@ class _SessionCard extends StatelessWidget {
                         ],
                       ]),
                       const SizedBox(height: 2),
-                      Text('${session.strideCount} strides',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
+                      Row(children: [
+                        Text(session.displayLabel,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
+                        Text('  ·  ${session.strideCount} strides',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                        if (session.metadata != null) ...[
+                          Text('  ·  PSE ${session.metadata!.pse}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                          Text('  ·  Esp ${session.metadata!.spasticity}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                        ],
+                      ]),
                     ],
                   )),
                   if (!selecting)
@@ -440,8 +455,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
         title: Row(children: [
-          Text(widget.record.displayLabel,
-            style: const TextStyle(fontSize: 15, color: Color(0xFF90CAF9))),
+          Expanded(
+            child: Text(
+              widget.record.metadata?.athleteName != null
+                  ? '${widget.record.metadata!.athleteName} — ${widget.record.displayLabel}'
+                  : widget.record.displayLabel,
+              style: const TextStyle(fontSize: 15, color: Color(0xFF90CAF9)),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (isActive) ...[
             const SizedBox(width: 8),
             Container(
@@ -472,6 +494,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             _readout('ωpico last', last != null ? last.omegaPico.toStringAsFixed(1) : '—', '°/s'),
             _readout('τst% last',  last != null ? last.tauStPct.toStringAsFixed(1)  : '—', '%'),
             _readout('αatq last',  last != null ? last.alphaAtq.toStringAsFixed(1)  : '—', '°'),
+            if (widget.record.metadata != null) ...[
+              _readout('PSE',          '${widget.record.metadata!.pse}',         '/10'),
+              _readout('ESPASTICIDADE', '${widget.record.metadata!.spasticity}', '/10'),
+            ],
             _readout('RETURNS',    '${returns.length}', ''),
           ]),
           const SizedBox(height: 12),

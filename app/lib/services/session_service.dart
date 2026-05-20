@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:paia/models/pipeline_result.dart';
+import 'package:paia/models/session_record.dart';
 
 class SessionService {
-  File?     _file;
+  File?    _file;
   IOSink?  _sink;
-  bool     _active = false;
+  bool     _active      = false;
   int      _strideCount = 0;
-  String   _label = '';
+  String   _label       = '';
 
   final _newSessionCtrl = StreamController<void>.broadcast();
   final _strideCtrl     = StreamController<StrideData>.broadcast();
@@ -18,14 +19,12 @@ class SessionService {
   int    get strideCount => _strideCount;
   String get label       => _label;
 
-  /// Fires whenever a new session is started.
-  Stream<void>      get onNewSession => _newSessionCtrl.stream;
-  /// Fires on every logged stride (for live detail updates).
+  Stream<void>       get onNewSession => _newSessionCtrl.stream;
   Stream<StrideData> get strideStream => _strideCtrl.stream;
 
   bool isCurrentSession(String fileName) => _active && _label == fileName;
 
-  Future<void> newSession() async {
+  Future<void> newSession({SessionMetadata? meta}) async {
     if (_active) {
       await _sink?.flush();
       await _sink?.close();
@@ -35,13 +34,23 @@ class SessionService {
     final dir = await getApplicationDocumentsDirectory();
     final ts  = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
     _file = File('${dir.path}/session_$ts.csv');
-    _sink = _file!.openWrite()
-      ..writeln('stride,time_s,omega_pico_degs,tau_st_pct,alpha_atq_deg');
+    _sink = _file!.openWrite();
+
+    // Metadata comment lines (parsed back by SessionsRepository)
+    if (meta != null) {
+      _sink!
+        ..writeln('# athlete: ${meta.athleteName}')
+        ..writeln('# pse: ${meta.pse}')
+        ..writeln('# spasticity: ${meta.spasticity}');
+    }
+
+    _sink!.writeln('stride,time_s,omega_pico_degs,tau_st_pct,alpha_atq_deg');
+
     _active      = true;
     _strideCount = 0;
     _label       = 'session_$ts';
 
-    await _sink!.flush();   // ensure header is on disk before notifying
+    await _sink!.flush();   // ensure header on disk before notifying
     _newSessionCtrl.add(null);
   }
 
@@ -64,6 +73,6 @@ class SessionService {
 
   Future<void> exportCurrent() async {
     if (_file == null || !await _file!.exists()) return;
-    await Share.shareXFiles([XFile(_file!.path)], subject: 'PAIA3 session');
+    await Share.shareXFiles([XFile(_file!.path)], subject: 'PAIA session');
   }
 }

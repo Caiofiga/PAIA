@@ -41,7 +41,9 @@ jobs:
 
       - name: Build debug APK
         working-directory: ${{ env.WORKING_DIR }}
-        run: flutter build apk --debug
+        run: flutter build apk --debug --verbose
+        env:
+          GRADLE_OPTS: "--stacktrace --info"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -19,8 +19,7 @@ class ReturnData {
   final double omegaPico;
   final double tauStPct;
   final double alphaAtq;
-  final double? it;
-  final List<double>? normSlopes; // length 3
+  final List<double>? deviations; // [Δω, Δτ, Δα] positive = worse
   final bool alert;
 
   const ReturnData({
@@ -28,41 +27,52 @@ class ReturnData {
     required this.omegaPico,
     required this.tauStPct,
     required this.alphaAtq,
-    this.it,
-    this.normSlopes,
+    this.deviations,
     required this.alert,
   });
 }
 
-enum PipelineType { calibrating, live }
+enum PipelineType { staticCalib, calibrating, live }
 
 class PipelineResult {
   final PipelineType type;
 
-  // calibrating
+  // staticCalib / calibrating
   final double calibProgress;  // 0..1
-  final double thetaDeg;       // always present
+  final double thetaDeg;
+  final String message;
 
   // live
   final double ts;
   final double theta;
   final double omega;
+  final double accelNorm;
   final StrideData? stride;
   final ReturnData? returnData;
+
+  const PipelineResult.staticCalib({
+    required this.calibProgress,
+    required this.message,
+  })  : type = PipelineType.staticCalib,
+        thetaDeg = 0,
+        ts = 0, theta = 0, omega = 0, accelNorm = 0,
+        stride = null, returnData = null;
 
   const PipelineResult.calibrating({
     required this.calibProgress,
     required this.thetaDeg,
   })  : type = PipelineType.calibrating,
-        ts = 0, theta = 0, omega = 0,
+        message = '',
+        ts = 0, theta = 0, omega = 0, accelNorm = 0,
         stride = null, returnData = null;
 
   const PipelineResult.live({
     required this.ts,
     required this.theta,
     required this.omega,
+    required this.accelNorm,
     this.stride,
     this.returnData,
   })  : type = PipelineType.live,
-        calibProgress = 0, thetaDeg = 0;
+        calibProgress = 0, thetaDeg = 0, message = '';
 }

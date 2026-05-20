@@ -10,13 +10,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cfg      = await AthleteConfig.load();
   final pipeline = PipelineService(
-    sampleRate:       100,
-    gyroAxis:         cfg.gyroAxis,
-    swingEntryOmega:  cfg.swingEntryOmega,
-    minSwingSamples:  cfg.minSwingSamples,
-    stridesPerReturn: cfg.stridesPerReturn,
-    nWindow:          cfg.nWindow,
-    calibStrides:     cfg.calibStrides,
+    sampleRate:          100,
+    gyroAxis:            cfg.gyroAxis,
+    swingEntryOmega:     cfg.swingEntryOmega,
+    minSwingSamples:     cfg.minSwingSamples,
+    stridesPerReturn:    cfg.stridesPerReturn,
+    calibStrides:        cfg.calibStrides,
+    staticCalibSamples:  cfg.staticCalibSamples,
+    accelSwingThresh:    cfg.accelSwingThresh,
   );
   final udp     = UdpService(pipeline);
   final session = SessionService();

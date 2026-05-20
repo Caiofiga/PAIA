@@ -40,31 +40,40 @@ class ReturnTable extends StatelessWidget {
                 DataColumn(label: Text('ωpico')),
                 DataColumn(label: Text('τst%')),
                 DataColumn(label: Text('αatq')),
-                DataColumn(label: Text('IT')),
-                DataColumn(label: Text('ω σ')),
-                DataColumn(label: Text('τ σ')),
-                DataColumn(label: Text('α σ')),
+                DataColumn(label: Text('Δω')),
+                DataColumn(label: Text('Δτ')),
+                DataColumn(label: Text('Δα')),
                 DataColumn(label: Text('Alert')),
               ],
               rows: rows.reversed.take(30).map((r) {
-                final itColor = r.it == null ? Colors.white
-                  : r.alert ? const Color(0xFFEF9A9A)
-                  : (r.it! > 1) ? const Color(0xFFFFE082)
-                  : const Color(0xFFA5D6A7);
-                final ns = r.normSlopes;
+                final devs = r.deviations;
+
+                Color _devColor(double? d) {
+                  if (d == null) return const Color(0xFFCFD8DC);
+                  if (d.abs() > 2.0) return const Color(0xFFEF9A9A);
+                  if (d.abs() > 1.0) return const Color(0xFFFFE082);
+                  return const Color(0xFFA5D6A7);
+                }
+
+                String _devStr(List<double>? ds, int i) =>
+                    ds != null ? ds[i].toStringAsFixed(2) : '—';
+
                 return DataRow(cells: [
                   DataCell(Text('${r.n}')),
                   DataCell(Text(r.omegaPico.toStringAsFixed(1))),
                   DataCell(Text(r.tauStPct.toStringAsFixed(1))),
                   DataCell(Text(r.alphaAtq.toStringAsFixed(1))),
-                  DataCell(Text(r.it != null ? r.it!.toStringAsFixed(3) : '—',
-                    style: TextStyle(color: itColor))),
-                  DataCell(Text(ns != null ? ns[0].toStringAsFixed(2) : '—')),
-                  DataCell(Text(ns != null ? ns[1].toStringAsFixed(2) : '—')),
-                  DataCell(Text(ns != null ? ns[2].toStringAsFixed(2) : '—')),
+                  DataCell(Text(_devStr(devs, 0),
+                    style: TextStyle(color: _devColor(devs?[0])))),
+                  DataCell(Text(_devStr(devs, 1),
+                    style: TextStyle(color: _devColor(devs?[1])))),
+                  DataCell(Text(_devStr(devs, 2),
+                    style: TextStyle(color: _devColor(devs?[2])))),
                   DataCell(Text(r.alert ? '⚠ YES' : 'ok',
                     style: TextStyle(
-                      color: r.alert ? const Color(0xFFEF9A9A) : const Color(0xFFA5D6A7)))),
+                      color: r.alert
+                          ? const Color(0xFFEF9A9A)
+                          : const Color(0xFFA5D6A7)))),
                 ]);
               }).toList(),
             ),

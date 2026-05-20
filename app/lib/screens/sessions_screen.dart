@@ -371,57 +371,59 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   static const int _stridesPerReturn = 6;
-  static const int _nWindow          = 4;
+
+  static double _median(List<double> vals) {
+    final sorted = List.of(vals)..sort();
+    final mid    = sorted.length ~/ 2;
+    return sorted.length.isOdd ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2.0;
+  }
 
   List<ReturnData> _computeReturns(List<StrideRow> strides) {
-    final full = <List<StrideRow>>[];
+    // Group strides into chunks of _stridesPerReturn
+    final groups = <List<StrideRow>>[];
     for (int i = 0; i + _stridesPerReturn <= strides.length; i += _stridesPerReturn) {
-      full.add(strides.sublist(i, i + _stridesPerReturn));
+      groups.add(strides.sublist(i, i + _stridesPerReturn));
     }
-    if (full.isEmpty) return [];
+    if (groups.isEmpty) return [];
 
-    final means = full.map((c) => [
-      c.map((s) => s.omegaPico).reduce((a, b) => a + b) / c.length,
-      c.map((s) => s.tauStPct ).reduce((a, b) => a + b) / c.length,
-      c.map((s) => s.alphaAtq ).reduce((a, b) => a + b) / c.length,
+    // Median per group
+    final medians = groups.map((g) => [
+      _median(g.map((s) => s.omegaPico).toList()),
+      _median(g.map((s) => s.tauStPct ).toList()),
+      _median(g.map((s) => s.alphaAtq ).toList()),
     ]).toList();
 
-    final gm = [
-      means.map((m) => m[0]).reduce((a, b) => a + b) / means.length,
-      means.map((m) => m[1]).reduce((a, b) => a + b) / means.length,
-      means.map((m) => m[2]).reduce((a, b) => a + b) / means.length,
-    ];
-    final slopeStd = List.generate(3, (c) {
-      final v = means.map((m) => math.pow(m[c] - gm[c], 2))
-          .reduce((a, b) => a + b) / means.length;
-      final s = math.sqrt(v); return s < 1e-6 ? 1e-6 : s;
+    // Session-level baseline: mean and std of all return medians
+    final bMean = List.generate(3, (c) {
+      final vals = medians.map((m) => m[c]).toList();
+      return vals.reduce((a, b) => a + b) / vals.length;
+    });
+    final bStd = List.generate(3, (c) {
+      final vals = medians.map((m) => m[c]).toList();
+      final variance = vals.map((v) => math.pow(v - bMean[c], 2).toDouble())
+          .reduce((a, b) => a + b) / vals.length;
+      final s = math.sqrt(variance);
+      return s < 1e-6 ? 1e-6 : s;
     });
 
-    return List.generate(means.length, (i) {
-      double? it; List<double>? ns; bool alert = false;
-      if (i >= 1) {
-        final w    = means.sublist(math.max(0, i + 1 - _nWindow), i + 1);
-        final m    = w.length;
-        final xBar = (m - 1) / 2.0;
-        double den = w.fold(0.0, (s, _) => s) + 1e-12;
-        den = 0; for (int j = 0; j < m; j++) den += math.pow(j - xBar, 2); den += 1e-12;
-        final sl = List.generate(3, (col) {
-          final yBar = w.map((r) => r[col]).reduce((a, b) => a + b) / m;
-          double num = 0;
-          for (int j = 0; j < m; j++) num += (j - xBar) * (w[j][col] - yBar);
-          return num / den;
-        });
-        final signed = [-sl[0], sl[1], -sl[2]];
-        ns    = List.generate(3, (j) => double.parse((signed[j] / slopeStd[j]).toStringAsFixed(3)));
-        it    = double.parse((ns.reduce((a, b) => a + b) / 3).toStringAsFixed(3));
-        alert = ns.where((s) => s.abs() > 2.0).length >= 2;
+    return List.generate(medians.length, (i) {
+      List<double>? devs;
+      bool alert = false;
+      if (medians.length >= 2) {
+        devs = [
+          -(medians[i][0] - bMean[0]) / bStd[0],
+           (medians[i][1] - bMean[1]) / bStd[1],
+          -(medians[i][2] - bMean[2]) / bStd[2],
+        ];
+        alert = devs.where((d) => d.abs() > 2.0).length >= 2;
       }
       return ReturnData(
-        n: i + 1,
-        omegaPico: double.parse(means[i][0].toStringAsFixed(2)),
-        tauStPct:  double.parse(means[i][1].toStringAsFixed(2)),
-        alphaAtq:  double.parse(means[i][2].toStringAsFixed(2)),
-        it: it, normSlopes: ns, alert: alert,
+        n:         i + 1,
+        omegaPico: double.parse(medians[i][0].toStringAsFixed(2)),
+        tauStPct:  double.parse(medians[i][1].toStringAsFixed(2)),
+        alphaAtq:  double.parse(medians[i][2].toStringAsFixed(2)),
+        deviations: devs,
+        alert:     alert,
       );
     });
   }
@@ -431,8 +433,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final strides = _strides;
     final returns = _computeReturns(strides);
     final last    = strides.isNotEmpty ? strides.last : null;
-    final itSpots = returns.where((r) => r.it != null)
-        .map((r) => FlSpot(r.n.toDouble(), r.it!)).toList();
     final isActive = widget.service.isCurrentSession(widget.record.fileName);
 
     return Scaffold(
@@ -487,10 +487,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             strides.map((s) => FlSpot(s.stride.toDouble(), s.alphaAtq)).toList(),
             const Color(0xFFFFA726)),
           const SizedBox(height: 12),
-          if (itSpots.isNotEmpty) ...[
-            _chart('TREND INDEX IT OVER RETURNS', itSpots, const Color(0xFFEF9A9A)),
-            const SizedBox(height: 12),
-          ],
           if (returns.isNotEmpty) ReturnTable(rows: returns),
         ],
       ),

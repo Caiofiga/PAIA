@@ -31,22 +31,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<PipelineResult>? _sub;
   bool _connected = false;
 
-  bool   _started       = false;
-  bool   _calibrated    = false;
-  double _calibProgress = 0.0;
-  double _calibTheta    = 0.0;
+  bool   _started          = false;
+  bool   _staticCalibDone  = false;
+  bool   _calibrated       = false;
+  double _calibProgress    = 0.0;
+  double _calibTheta       = 0.0;
+  String _staticMsg        = 'Stand still — gravity calibration';
 
-  double _theta = 0, _omega = 0;
+  double _theta = 0, _omega = 0, _accelNorm = 0;
   double _wPico = 0, _tau   = 0, _aAtq = 0;
 
   final List<FlSpot> _thetaPts = [];
   final List<FlSpot> _omegaPts = [];
-  final List<FlSpot> _itPts    = [];
 
   int    _returnCount = 0;
   double _retWPico = 0, _retTau = 0, _retAAtq = 0;
-  double? _retIT;
-  List<double>? _retNS;
+  List<double>? _retDeviations;
   bool   _alert = false;
   final List<ReturnData> _returnRows = [];
 
@@ -72,15 +72,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onResult(PipelineResult r) {
     if (!mounted) return;
     setState(() {
-      if (r.type == PipelineType.calibrating) {
+      if (r.type == PipelineType.staticCalib) {
         _calibProgress = r.calibProgress;
-        _calibTheta    = r.thetaDeg;
+        _staticMsg     = r.message;
+        return;
+      }
+
+      if (r.type == PipelineType.calibrating) {
+        _staticCalibDone = true;
+        _calibProgress   = r.calibProgress;
+        _calibTheta      = r.thetaDeg;
         return;
       }
 
       _calibrated = true;
-      _theta = r.theta;
-      _omega = r.omega;
+      _theta      = r.theta;
+      _omega      = r.omega;
+      _accelNorm  = r.accelNorm;
 
       _push(_thetaPts, r.ts, r.theta);
       _push(_omegaPts, r.ts, r.omega);
@@ -95,14 +103,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (r.returnData != null) {
         final rd = r.returnData!;
-        _returnCount = rd.n;
-        _retWPico    = rd.omegaPico;
-        _retTau      = rd.tauStPct;
-        _retAAtq     = rd.alphaAtq;
-        _retIT       = rd.it;
-        _retNS       = rd.normSlopes;
-        _alert       = rd.alert;
-        if (rd.it != null) _push(_itPts, rd.n.toDouble(), rd.it!);
+        _returnCount  = rd.n;
+        _retWPico     = rd.omegaPico;
+        _retTau       = rd.tauStPct;
+        _retAAtq      = rd.alphaAtq;
+        _retDeviations = rd.deviations;
+        _alert        = rd.alert;
         _returnRows.add(rd);
         if (_returnRows.length > 100) _returnRows.removeAt(0);
       }
@@ -118,15 +124,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await widget.session.newSession();
     widget.pipeline.reset();
     setState(() {
-      _calibrated    = false;
-      _calibProgress = 0.0;
-      _calibTheta    = 0.0;
+      _staticCalibDone  = false;
+      _calibrated       = false;
+      _calibProgress    = 0.0;
+      _calibTheta       = 0.0;
       _thetaPts.clear();
       _omegaPts.clear();
-      _itPts.clear();
       _returnCount = 0;
       _retWPico = 0; _retTau = 0; _retAAtq = 0;
-      _retIT = null; _retNS = null; _alert = false;
+      _retDeviations = null; _alert = false;
       _returnRows.clear();
     });
   }
@@ -173,18 +179,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 10),
                   _buildReturnStats(),
                   const SizedBox(height: 10),
-                  LiveChart(
-                    spots: List.of(_itPts),
-                    lineColor: const Color(0xFFFFA726),
-                    title: 'TREND INDEX IT OVER RETURNS',
-                  ),
-                  const SizedBox(height: 10),
                   ReturnTable(rows: List.of(_returnRows)),
                 ],
               ),
             ),
           ),
           if (!_started) _buildIntroOverlay()
+          else if (!_staticCalibDone) _buildStaticCalibOverlay()
           else if (!_calibrated) _buildCalibOverlay(),
         ],
       ),
@@ -200,7 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _connected ? const Color(0xFFA5D6A7) : const Color(0xFF90A4AE),
         ),
         const SizedBox(width: 8),
-        _itChip(),
+        _alertChip(),
         const Spacer(),
         if (widget.session.isActive)
           Text(widget.session.label,
@@ -220,11 +221,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _itChip() {
-    if (_retIT == null) return _chip('IT —', const Color(0xFF263238), const Color(0xFF90A4AE));
-    if (_alert)         return _chip('IT ${_retIT!.toStringAsFixed(2)}', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
-    if (_retIT! > 1)    return _chip('IT ${_retIT!.toStringAsFixed(2)}', const Color(0xFFE65100), const Color(0xFFFFE0B2));
-    return _chip('IT ${_retIT!.toStringAsFixed(2)}', const Color(0xFF1B5E20), const Color(0xFFA5D6A7));
+  Widget _alertChip() {
+    if (_retDeviations == null) {
+      return _chip('—', const Color(0xFF263238), const Color(0xFF90A4AE));
+    }
+    if (_alert) return _chip('⚠ ALERT', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
+    return _chip('OK', const Color(0xFF1B5E20), const Color(0xFFA5D6A7));
   }
 
   Widget _chip(String label, Color bg, Color fg) => Container(
@@ -246,16 +248,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildReadouts() => Wrap(
     spacing: 8, runSpacing: 8,
     children: [
-      ReadoutCard(label: 'θ TIBIA ANGLE',     value: _theta.toStringAsFixed(1), unit: '°'),
-      ReadoutCard(label: 'ω ANG. VELOCITY',   value: _omega.toStringAsFixed(1), unit: '°/s'),
-      ReadoutCard(label: 'ωpico LAST STRIDE', value: _wPico.toStringAsFixed(1), unit: '°/s'),
-      ReadoutCard(label: 'τst% LAST STRIDE',  value: _tau.toStringAsFixed(1),   unit: '%'),
-      ReadoutCard(label: 'αatq LAST STRIDE',  value: _aAtq.toStringAsFixed(1),  unit: '°'),
+      ReadoutCard(label: 'θ TIBIA ANGLE',     value: _theta.toStringAsFixed(1),     unit: '°'),
+      ReadoutCard(label: 'ω ANG. VELOCITY',   value: _omega.toStringAsFixed(1),     unit: '°/s'),
+      ReadoutCard(label: '|a| ACCEL NORM',    value: _accelNorm.toStringAsFixed(3), unit: 'g'),
+      ReadoutCard(label: 'ωpico LAST STRIDE', value: _wPico.toStringAsFixed(1),     unit: '°/s'),
+      ReadoutCard(label: 'τst% LAST STRIDE',  value: _tau.toStringAsFixed(1),       unit: '%'),
+      ReadoutCard(label: 'αatq LAST STRIDE',  value: _aAtq.toStringAsFixed(1),      unit: '°'),
     ],
   );
 
   Widget _buildReturnStats() {
-    final ns = _retNS;
+    final devs = _retDeviations;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -274,10 +277,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _statBox('ωpico',   _retWPico != 0 ? '${_retWPico.toStringAsFixed(1)} °/s' : '—'),
             _statBox('τst%',    _retTau   != 0 ? '${_retTau.toStringAsFixed(1)} %'     : '—'),
             _statBox('αatq',    _retAAtq  != 0 ? '${_retAAtq.toStringAsFixed(1)} °'    : '—'),
-            _statBox('IT',      _retIT  != null ? _retIT!.toStringAsFixed(3)            : '—'),
-            _statBox('ω σ',     ns != null ? ns[0].toStringAsFixed(2) : '—'),
-            _statBox('τ σ',     ns != null ? ns[1].toStringAsFixed(2) : '—'),
-            _statBox('α σ',     ns != null ? ns[2].toStringAsFixed(2) : '—'),
+            _statBox('Δω',      devs != null ? devs[0].toStringAsFixed(2) : '—'),
+            _statBox('Δτ',      devs != null ? devs[1].toStringAsFixed(2) : '—'),
+            _statBox('Δα',      devs != null ? devs[2].toStringAsFixed(2) : '—'),
           ]),
         ],
       ),
@@ -317,16 +319,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               await widget.session.newSession();
               widget.pipeline.reset();
               setState(() {
-                _started       = true;
-                _calibrated    = false;
-                _calibProgress = 0.0;
-                _calibTheta    = 0.0;
+                _started          = true;
+                _staticCalibDone  = false;
+                _calibrated       = false;
+                _calibProgress    = 0.0;
+                _calibTheta       = 0.0;
                 _thetaPts.clear();
                 _omegaPts.clear();
-                _itPts.clear();
                 _returnCount = 0;
                 _retWPico = 0; _retTau = 0; _retAAtq = 0;
-                _retIT = null; _retNS = null; _alert = false;
+                _retDeviations = null; _alert = false;
                 _returnRows.clear();
               });
             },
@@ -350,14 +352,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
   );
 
+  Widget _buildStaticCalibOverlay() => Positioned.fill(
+    child: Container(
+      color: Colors.black87,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('Phase 1 — Gravity Calibration',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text(_staticMsg,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF78909C)),
+            textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: LinearProgressIndicator(
+              value: _calibProgress,
+              backgroundColor: const Color(0xFF333333),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF66BB6A)),
+              minHeight: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text('${(_calibProgress * 100).toStringAsFixed(0)}%',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF78909C))),
+        ],
+      ),
+    ),
+  );
+
   Widget _buildCalibOverlay() => Positioned.fill(
     child: Container(
       color: Colors.black87,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('Calibrating — athlete walk to track (~40 strides)',
-            style: TextStyle(fontSize: 16), textAlign: TextAlign.center),
+          const Text('Phase 2 — Walk Calibration',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          const Text('Athlete walk to track (~40 strides)',
+            style: TextStyle(fontSize: 13, color: Color(0xFF78909C)),
+            textAlign: TextAlign.center),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),

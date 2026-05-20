@@ -1,0 +1,136 @@
+#include <Wire.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include "FastIMU.h"
+#include "ShittyIMU.h" // Include your new library
+
+// ── Config ────────────────────────────────────────────────────────────────
+#define SAMPLE_RATE_HZ  200
+#define UDP_PORT        4210
+#define AP_SSID         "PAIAG4"
+#define AP_PASS         "brutalite"   // min 8 chars; set "" for open AP
+
+// Scale factors — must match pipeline.py (±4g, ±500°/s)
+#define ACCEL_LSB  8192.0f   // LSB/g  for ±4 g
+#define GYRO_LSB   65.5f     // LSB/°/s for ±500 °/s
+
+// Custom Power Pin for Sensor 2 (MPU1)
+#define SENSOR2_POWER_PIN 13
+
+// ── Globals ───────────────────────────────────────────────────────────────
+ShittyIMU mpu0(Wire, 23, 22, 0x68); // Shank — Custom bypassed driver (SDA=23, SCL=22)
+MPU6050   mpu1(Wire1);              // Foot  — FastIMU handles this one (SDA=32, SCL=33)
+
+calData cal = { 0 };   // zeroed calibration (no offsets)
+
+WiFiUDP udp;
+
+// Packed struct sent as raw bytes over UDP
+#pragma pack(push, 1)
+struct SensorPacket {
+  uint32_t timestamp_ms;
+  int16_t  ax0, ay0, az0;
+  int16_t  gx0, gy0, gz0;
+  int16_t  ax1, ay1, az1;
+  int16_t  gx1, gy1, gz1;
+};
+#pragma pack(pop)
+
+// Default softAP subnet: 192.168.4.0/24 → broadcast 192.168.4.255
+IPAddress broadcastIP(192, 168, 4, 255);
+
+// ── Setup ─────────────────────────────────────────────────────────────────
+void setup() {
+  Serial.begin(115200);
+
+  // 1. Power up Sensor 2 via D13 BEFORE starting I2C
+  pinMode(SENSOR2_POWER_PIN, OUTPUT);
+  digitalWrite(SENSOR2_POWER_PIN, HIGH);
+  delay(100);
+
+  // 2. Initialize the two I2C buses
+  Wire.begin(23, 22);
+  Wire.setClock(400000);
+  Wire1.begin(32, 33);
+  Wire1.setClock(400000);
+
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0)
+      Serial.printf("[SCAN] Found device at 0x%02X\n", addr);
+  }
+
+  // 3. Initialize sensors
+  if (!mpu0.begin()) {
+    Serial.println("[ERR] MPU0 (ShittyIMU) init failed — check SDA=D23 SCL=D22");
+    while (true) delay(1000);
+  }
+
+  int err = mpu1.init(cal, 0x68);
+  if (err != 0) {
+    Serial.printf("[ERR] MPU1 init failed (%d) — check SDA=D32 SCL=D33\n", err);
+    while (true) delay(1000);
+  }
+
+  Serial.println("[INFO] MPUs OK");
+
+  // 4. Start own Access Point
+  WiFi.mode(WIFI_AP);
+  if (!WiFi.softAP(AP_SSID, AP_PASS)) {
+    Serial.println("[ERR] softAP start failed — restarting");
+    ESP.restart();
+  }
+
+  Serial.print("[INFO] AP IP: ");
+  Serial.println(WiFi.softAPIP());   // always 192.168.4.1 by default
+  Serial.print("[INFO] Broadcast: ");
+  Serial.println(broadcastIP);
+
+  udp.begin(UDP_PORT);
+  Serial.println("[INFO] Streaming started");
+}
+
+// ── Loop ──────────────────────────────────────────────────────────────────
+void loop() {
+  static uint32_t lastSample = 0;
+  const  uint32_t interval   = 1000 / SAMPLE_RATE_HZ;
+
+  uint32_t now = millis();
+  if (now - lastSample < interval) return;
+  lastSample = now;
+
+  AccelData a1;
+  GyroData  g1;
+
+  // Update both IMU engines
+  mpu0.update();
+  mpu1.update();
+
+  // Fetch data for the FastIMU sensor
+  mpu1.getAccel(&a1);
+  mpu1.getGyro(&g1);
+
+  SensorPacket pkt;
+  pkt.timestamp_ms = now;
+
+  // MPU0 (ShittyIMU): Pull integers directly out of register map to maintain raw formatting
+  pkt.ax0 = mpu0.data.rawAccelX;
+  pkt.ay0 = mpu0.data.rawAccelY;
+  pkt.az0 = mpu0.data.rawAccelZ;
+  pkt.gx0 = mpu0.data.rawGyroX;
+  pkt.gy0 = mpu0.data.rawGyroY;
+  pkt.gz0 = mpu0.data.rawGyroZ;
+
+  // MPU1 (FastIMU): Standard conversion matching your script scales
+  pkt.ax1 = (int16_t)(a1.accelX * ACCEL_LSB);
+  pkt.ay1 = (int16_t)(a1.accelY * ACCEL_LSB);
+  pkt.az1 = (int16_t)(a1.accelZ * ACCEL_LSB);
+  pkt.gx1 = (int16_t)(g1.gyroX  * GYRO_LSB);
+  pkt.gy1 = (int16_t)(g1.gyroY  * GYRO_LSB);
+  pkt.gz1 = (int16_t)(g1.gyroZ  * GYRO_LSB);
+
+  // Ship packet down UDP line to python listener
+  udp.beginPacket(broadcastIP, UDP_PORT);
+  udp.write(reinterpret_cast<uint8_t*>(&pkt), sizeof(pkt));
+  udp.endPacket();
+}

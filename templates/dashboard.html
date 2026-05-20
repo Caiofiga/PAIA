@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAIA3 — Biomechanical Monitor</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      padding: 16px;
+    }
+
+    h1 { font-size: 1.2rem; color: #90caf9; margin-bottom: 16px; }
+
+    /* ── Top bar ─────────────────────────────── */
+    #top-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .status-chip {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .chip-ok      { background: #1b5e20; color: #a5d6a7; }
+    .chip-warn    { background: #e65100; color: #ffe0b2; }
+    .chip-alert   { background: #b71c1c; color: #ffcdd2; }
+    .chip-neutral { background: #263238; color: #90a4ae; }
+
+    /* ── Session buttons ─────────────────────── */
+    .btn {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #btn-start { background: #2e7d32; color: #fff; }
+    #btn-start:disabled { background: #1b3a1c; color: #555; cursor: default; }
+    #btn-stop  { background: #c62828; color: #fff; }
+    #btn-stop:disabled  { background: #3a1b1b; color: #555; cursor: default; }
+
+    /* ── Calibration overlay ────────────────── */
+    #calib-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.88);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    #calib-overlay p   { font-size: 1.1rem; margin-bottom: 16px; }
+    #calib-bar-wrap    { width: 300px; background: #333; border-radius: 4px; height: 12px; }
+    #calib-bar         { height: 12px; background: #42a5f5; border-radius: 4px; width: 0%; transition: width 0.2s; }
+
+    /* ── Alert banner ───────────────────────── */
+    #alert-banner {
+      display: none;
+      background: #b71c1c;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      margin-bottom: 16px;
+    }
+
+    /* ── Grid ───────────────────────────────── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: #1e1e1e;
+      border: 1px solid #2c2c2c;
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      color: #78909c;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* ── Kinematic readouts ─────────────────── */
+    .readout-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .readout {
+      flex: 1;
+      min-width: 100px;
+      background: #1e1e1e;
+      border: 1px solid #2c2c2c;
+      border-radius: 6px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .readout label { font-size: 0.65rem; color: #78909c; display: block; margin-bottom: 4px; text-transform: uppercase; }
+    .readout span  { font-size: 1.4rem; font-weight: bold; }
+    .readout small { color: #546e7a; font-size: 0.7rem; }
+
+    /* ── Session stats ──────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
+    }
+    .stat-box {
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .stat-box label { font-size: 0.65rem; color: #546e7a; display: block; margin-bottom: 3px; text-transform: uppercase; }
+    .stat-box span  { font-size: 1.1rem; font-weight: bold; color: #cfd8dc; }
+
+    /* ── Return table ───────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th    { color: #78909c; text-align: left; padding: 4px 8px; border-bottom: 1px solid #333; }
+    td    { padding: 5px 8px; border-bottom: 1px solid #1a1a1a; }
+
+    .it-ok    { color: #a5d6a7; }
+    .it-warn  { color: #ffe082; }
+    .it-alert { color: #ef9a9a; font-weight: bold; }
+
+    canvas { max-height: 210px; }
+  </style>
+</head>
+<body>
+
+<!-- Calibration overlay -->
+<div id="calib-overlay">
+  <p>Calibrating — athlete walk to track (~40 strides)</p>
+  <div id="calib-bar-wrap"><div id="calib-bar"></div></div>
+  <p id="calib-angle" style="margin-top:12px; font-size:0.85rem; color:#78909c;"></p>
+</div>
+
+<h1>PAIA3 — Spasticity &amp; Fatigue Monitor</h1>
+
+<!-- Top bar -->
+<div id="top-bar">
+  <span id="conn-chip" class="status-chip chip-neutral">● Connecting</span>
+  <span id="it-chip"   class="status-chip chip-neutral">IT —</span>
+  <button class="btn" id="btn-start" onclick="startSession()">▶ Start session</button>
+  <button class="btn" id="btn-stop"  onclick="stopSession()"  disabled>■ Stop session</button>
+  <span id="session-label" style="font-size:0.75rem; color:#546e7a;"></span>
+</div>
+
+<div id="alert-banner">⚠ DETERIORATION DETECTED — ≥2 params beyond 2σ</div>
+
+<!-- Live kinematic readouts -->
+<div class="readout-row">
+  <div class="readout">
+    <label>θ Tibia angle</label>
+    <span id="val-theta">—</span>
+    <small> °</small>
+  </div>
+  <div class="readout">
+    <label>ω Angular velocity</label>
+    <span id="val-omega">—</span>
+    <small> °/s</small>
+  </div>
+  <div class="readout">
+    <label>ωpico (last stride)</label>
+    <span id="val-wpico">—</span>
+    <small> °/s</small>
+  </div>
+  <div class="readout">
+    <label>τst% (last stride)</label>
+    <span id="val-tau">—</span>
+    <small> %</small>
+  </div>
+  <div class="readout">
+    <label>αatq (last stride)</label>
+    <span id="val-aatq">—</span>
+    <small> °</small>
+  </div>
+</div>
+
+<!-- Live charts -->
+<div class="grid-2">
+  <div class="card">
+    <h2>Tibia angle θ (°)</h2>
+    <canvas id="chart-theta"></canvas>
+  </div>
+  <div class="card">
+    <h2>Angular velocity ω (°/s)</h2>
+    <canvas id="chart-omega"></canvas>
+  </div>
+</div>
+
+<!-- Return stats + IT trend -->
+<div class="grid-2" style="margin-bottom:16px;">
+  <div class="card">
+    <h2>Last return summary</h2>
+    <div class="stats-grid">
+      <div class="stat-box"><label>Returns</label><span id="stat-returns">0</span></div>
+      <div class="stat-box"><label>ωpico</label><span id="stat-wpico">—</span></div>
+      <div class="stat-box"><label>τst%</label><span id="stat-tau">—</span></div>
+      <div class="stat-box"><label>αatq</label><span id="stat-aatq">—</span></div>
+      <div class="stat-box"><label>IT</label><span id="stat-it">—</span></div>
+      <div class="stat-box"><label>ω slope σ</label><span id="stat-ns0">—</span></div>
+      <div class="stat-box"><label>τ slope σ</label><span id="stat-ns1">—</span></div>
+      <div class="stat-box"><label>α slope σ</label><span id="stat-ns2">—</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Trend Index IT over returns</h2>
+    <canvas id="chart-it"></canvas>
+  </div>
+</div>
+
+<!-- Per-return table -->
+<div class="card">
+  <h2>Return log</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>ωpico (°/s)</th>
+        <th>τst% (%)</th>
+        <th>αatq (°)</th>
+        <th>IT</th>
+        <th>ω σ</th>
+        <th>τ σ</th>
+        <th>α σ</th>
+        <th>Alert</th>
+      </tr>
+    </thead>
+    <tbody id="return-tbody"></tbody>
+  </table>
+</div>
+
+<script>
+  const MAX_PTS = 300;
+
+  // ── Chart factory ──────────────────────────────────────────────────────────
+  function makeChart(id, label, color) {
+    return new Chart(document.getElementById(id).getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{ label, data: [], borderColor: color,
+          borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.2 }]
+      },
+      options: {
+        animation: false, responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { display: false },
+          y: { ticks: { color: '#78909c', font: { size: 10 } }, grid: { color: '#1e1e1e' } }
+        }
+      }
+    });
+  }
+
+  const chartTheta = makeChart('chart-theta', 'θ',  '#42a5f5');
+  const chartOmega = makeChart('chart-omega', 'ω',  '#66bb6a');
+  const chartIT    = makeChart('chart-it',    'IT', '#ffa726');
+
+  // Add zero-line annotation to IT chart
+  chartIT.options.plugins.annotation = {};
+
+  function pushPoint(chart, x, y) {
+    chart.data.labels.push(x);
+    chart.data.datasets[0].data.push(y);
+    if (chart.data.labels.length > MAX_PTS) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
+    }
+    chart.update('none');
+  }
+
+  // ── Session control ──────────────────────────────────────────────────────
+  function startSession() {
+    fetch('/api/session/start', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('btn-start').disabled = true;
+        document.getElementById('btn-stop').disabled  = false;
+        document.getElementById('session-label').textContent = 'Recording — ' + d.at;
+        document.getElementById('return-tbody').innerHTML = '';
+        document.getElementById('stat-returns').textContent = '0';
+        [chartIT].forEach(c => {
+          c.data.labels = []; c.data.datasets[0].data = []; c.update('none');
+        });
+      });
+  }
+
+  function stopSession() {
+    fetch('/api/session/stop', { method: 'POST' })
+      .then(() => {
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-stop').disabled  = true;
+        document.getElementById('session-label').textContent = 'Session saved to sessions/ folder';
+      });
+  }
+
+  // ── Socket.IO ────────────────────────────────────────────────────────────
+  const socket = io();
+
+  socket.on('connect', () => {
+    document.getElementById('conn-chip').textContent = '● Connected';
+    document.getElementById('conn-chip').className   = 'status-chip chip-ok';
+  });
+  socket.on('disconnect', () => {
+    document.getElementById('conn-chip').textContent = '● Disconnected';
+    document.getElementById('conn-chip').className   = 'status-chip chip-warn';
+  });
+
+  socket.on('update', (data) => {
+    if (data.type === 'calibrating') {
+      document.getElementById('calib-bar').style.width =
+        (data.progress * 100) + '%';
+      document.getElementById('calib-angle').textContent = `θ = ${data.theta_deg}°`;
+      return;
+    }
+
+    const overlay = document.getElementById('calib-overlay');
+    if (overlay.style.display !== 'none') overlay.style.display = 'none';
+
+    // Live readouts
+    document.getElementById('val-theta').textContent = data.theta.toFixed(1);
+    document.getElementById('val-omega').textContent = data.omega.toFixed(1);
+
+    pushPoint(chartTheta, data.ts, data.theta);
+    pushPoint(chartOmega, data.ts, data.omega);
+
+    // Per-stride readouts
+    if (data.stride) {
+      const s = data.stride;
+      document.getElementById('val-wpico').textContent = s.omega_pico.toFixed(1);
+      document.getElementById('val-tau').textContent   = s.tau_st_pct.toFixed(1);
+      document.getElementById('val-aatq').textContent  = s.alpha_atq.toFixed(1);
+    }
+
+    // Per-return update
+    if (!data.return) return;
+    const r = data.return;
+
+    // Stats panel
+    document.getElementById('stat-returns').textContent = r.n;
+    document.getElementById('stat-wpico').textContent   = r.omega_pico.toFixed(1) + ' °/s';
+    document.getElementById('stat-tau').textContent     = r.tau_st_pct.toFixed(1) + ' %';
+    document.getElementById('stat-aatq').textContent    = r.alpha_atq.toFixed(1) + ' °';
+
+    const hasIT = r.IT != null;
+    const ns    = r.norm_slopes ?? [null, null, null];
+
+    document.getElementById('stat-it').textContent  = hasIT ? r.IT.toFixed(3) : '—';
+    document.getElementById('stat-ns0').textContent = ns[0] != null ? ns[0].toFixed(2) : '—';
+    document.getElementById('stat-ns1').textContent = ns[1] != null ? ns[1].toFixed(2) : '—';
+    document.getElementById('stat-ns2').textContent = ns[2] != null ? ns[2].toFixed(2) : '—';
+
+    // IT chip
+    const itChip = document.getElementById('it-chip');
+    if (!hasIT) {
+      itChip.textContent = 'IT —';
+      itChip.className   = 'status-chip chip-neutral';
+    } else {
+      itChip.textContent = `IT ${r.IT.toFixed(2)}`;
+      itChip.className   = 'status-chip ' + (r.alert ? 'chip-alert' : r.IT > 1 ? 'chip-warn' : 'chip-ok');
+    }
+
+    // Alert banner
+    document.getElementById('alert-banner').style.display = r.alert ? 'block' : 'none';
+
+    // IT trend chart
+    if (hasIT) pushPoint(chartIT, r.n, r.IT);
+
+    // Return table row
+    const itClass = !hasIT ? '' : r.alert ? 'it-alert' : r.IT > 1 ? 'it-warn' : 'it-ok';
+    const tbody   = document.getElementById('return-tbody');
+    const tr      = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.n}</td>
+      <td>${r.omega_pico.toFixed(1)}</td>
+      <td>${r.tau_st_pct.toFixed(1)}</td>
+      <td>${r.alpha_atq.toFixed(1)}</td>
+      <td class="${itClass}">${hasIT ? r.IT.toFixed(3) : '—'}</td>
+      <td>${ns[0] != null ? ns[0].toFixed(2) : '—'}</td>
+      <td>${ns[1] != null ? ns[1].toFixed(2) : '—'}</td>
+      <td>${ns[2] != null ? ns[2].toFixed(2) : '—'}</td>
+      <td>${r.alert ? '⚠ YES' : 'ok'}</td>
+    `;
+    tbody.prepend(tr);
+    while (tbody.rows.length > 30) tbody.deleteRow(tbody.rows.length - 1);
+  });
+</script>
+</body>
+</html>

@@ -386,6 +386,39 @@ class PipelineService {
     });
   }
 
+  // ── Calibration getters (for session logging) ─────────────────────────────
+
+  List<double> get baselineMean => List.of(_baselineMean);
+  List<double> get baselineStd  => List.of(_baselineStd);
+  double get gravityMagnitude => _gravityMagnitude;
+  double get thetaRefDeg => _thetaRef;
+  bool get isCalibrated => _calibrated;
+
+  void resetStaticOnly() {
+    _filter.reset();
+    _butter.reset();
+    for (final f in _med) f.reset();
+
+    _staticPhase         = true;
+    _staticBuf.clear();
+    _gravityMagnitude    = 1.0;
+    _accelSwingDynThresh = 0.15;
+
+    // Dynamic baseline is intentionally preserved:
+    // _calibrated, _baselineMean, _baselineStd, _thetaRef stay unchanged.
+
+    _inSwing      = false;
+    _prevIcTs     = null;
+    _omegaBuf     = [];
+    _swingSamples = 0;
+
+    _recentOmega.clear();
+    _recentTau.clear();
+    _returnStrideBuf.clear();
+    _returnIndex  = 0;
+    _strideNum    = 0;
+  }
+
   void reset() {
     _filter.reset();
     _butter.reset();

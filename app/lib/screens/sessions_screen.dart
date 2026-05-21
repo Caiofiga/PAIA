@@ -76,7 +76,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Future<void> _exportSelected() async {
     final files = _sessions
       .where((s) => _selected.contains(s.fileName))
-      .map((s) => XFile(s.filePath))
+      .expand((s) => s.allFilePaths().map((p) => XFile(p)))
       .toList();
     if (files.isEmpty) return;
     await Share.shareXFiles(files, subject: 'PAIA3 sessions');
@@ -105,7 +105,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
     if (confirm != true) return;
     for (final s in _sessions.where((s) => _selected.contains(s.fileName))) {
-      try { await File(s.filePath).delete(); } catch (_) {}
+      for (final path in s.allFilePaths()) {
+        try { await File(path).delete(); } catch (_) {}
+      }
     }
     _exitSelect();
     await _load();
@@ -284,18 +286,21 @@ class _SessionCard extends StatelessWidget {
                         ],
                       ]),
                       const SizedBox(height: 2),
-                      Row(children: [
-                        Text(session.displayLabel,
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
-                        Text('  ·  ${session.strideCount} passadas',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
-                        if (session.metadata != null) ...[
-                          Text('  ·  PSE ${session.metadata!.pse}',
+                      Wrap(
+                        spacing: 0, runSpacing: 1,
+                        children: [
+                          Text(session.displayLabel,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
+                          Text('  ·  ${session.strideCount} passadas',
                             style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
-                          Text('  ·  Esp ${session.metadata!.spasticity}',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                          if (session.metadata != null) ...[
+                            Text('  ·  PSE ${session.metadata!.pse}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                            Text('  ·  Esp ${session.metadata!.spasticity}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF546E7A))),
+                          ],
                         ],
-                      ]),
+                      ),
                     ],
                   )),
                   if (!selecting)
@@ -303,7 +308,8 @@ class _SessionCard extends StatelessWidget {
                       icon: const Icon(Icons.share, size: 20, color: Color(0xFF78909C)),
                       tooltip: 'Exportar CSV',
                       onPressed: () => Share.shareXFiles(
-                        [XFile(session.filePath)], subject: session.fileName),
+                        session.allFilePaths().map((p) => XFile(p)).toList(),
+                        subject: session.fileName),
                     ),
                 ],
               ),
@@ -394,21 +400,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   List<ReturnData> _computeReturns(List<StrideRow> strides) {
-    // Group strides into chunks of _stridesPerReturn
     final groups = <List<StrideRow>>[];
     for (int i = 0; i + _stridesPerReturn <= strides.length; i += _stridesPerReturn) {
       groups.add(strides.sublist(i, i + _stridesPerReturn));
     }
     if (groups.isEmpty) return [];
 
-    // Median per group
     final medians = groups.map((g) => [
       _median(g.map((s) => s.omegaPico).toList()),
       _median(g.map((s) => s.tauStPct ).toList()),
       _median(g.map((s) => s.alphaAtq ).toList()),
     ]).toList();
 
-    // Session-level baseline: mean and std of all return medians
     final bMean = List.generate(3, (c) {
       final vals = medians.map((m) => m[c]).toList();
       return vals.reduce((a, b) => a + b) / vals.length;
@@ -482,7 +485,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           IconButton(
             icon: const Icon(Icons.share, color: Color(0xFF78909C)),
             onPressed: () => Share.shareXFiles(
-              [XFile(widget.record.filePath)], subject: widget.record.fileName),
+              widget.record.allFilePaths().map((p) => XFile(p)).toList(),
+              subject: widget.record.fileName),
           ),
         ],
       ),
@@ -545,7 +549,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final minY  = spots.map((s) => s.y).reduce(math.min);
     final maxY  = spots.map((s) => s.y).reduce(math.max);
     final range = math.max(maxY - minY, 1e-6);
-    // Use 4 intervals, rounded to a nice number
     final rawInt   = range / 4;
     final mag      = math.pow(10, (math.log(rawInt) / math.ln10).floor());
     final yInt     = ((rawInt / mag).ceil() * mag).toDouble();
@@ -588,7 +591,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 reservedSize: 40,
                 interval: yInt,
                 getTitlesWidget: (v, meta) {
-                  // Skip min/max to avoid crowding at edges
                   if (v == meta.min || v == meta.max) return const SizedBox.shrink();
                   return SideTitleWidget(
                     axisSide: meta.axisSide,

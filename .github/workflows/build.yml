@@ -69,7 +69,17 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: flutter build ios --debug --no-codesign
 
+      # NEW STEP: Convert the .app directory into a single structured .ipa file
+      - name: Package into IPA
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r PAIA-debug.ipa Payload
+          
+      # UPDATED STEP: Upload the single .ipa file instead of the directory
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-debug-app
-          path: ${{ env.WORKING_DIR }}/build/ios/iphoneos/Runner.app
+          name: ios-debug-ipa
+          path: ${{ env.WORKING_DIR }}/build/ios/iphoneos/PAIA-debug.ipa

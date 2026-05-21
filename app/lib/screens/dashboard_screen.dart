@@ -12,7 +12,7 @@ import 'package:paia/widgets/return_table.dart';
 
 const int _maxPts = 300;
 
-enum _OnboardStep { name, placement, pse, spasticity }
+enum _OnboardStep { name, placement, pse, spasticity, bateriaQuick }
 
 // ── PSE color ─────────────────────────────────────────────────────────────────
 
@@ -89,10 +89,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool   _alert = false;
   final List<ReturnData> _returnRows = [];
 
+  // Return mode
+  bool _inReturn = false;
+  StreamSubscription<bool>? _returnSub;
+
+  // Nova Bateria
+  int _bateriaPse        = 5;
+  int _bateriaSpasticity = 5;
+  int _bateriaStep       = 0; // 0 = pse, 1 = spasticity
+
   @override
   void initState() {
     super.initState();
     _startUdp();
+    _returnSub = widget.session.returnMode.listen((v) {
+      if (mounted) setState(() => _inReturn = v);
+    });
   }
 
   @override
@@ -100,6 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _nameCtrl.dispose();
     _connTimer?.cancel();
     _sub?.cancel();
+    _returnSub?.cancel();
     widget.udp.dispose();
     // ignore: discarded_futures
     widget.session.close();
@@ -142,6 +155,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return;
       }
 
+      if (!_calibrated) {
+        widget.session.logCalibration(
+          baselineMean: widget.pipeline.baselineMean,
+          baselineStd:  widget.pipeline.baselineStd,
+          gravityG:     widget.pipeline.gravityMagnitude,
+          thetaRefDeg:  widget.pipeline.thetaRefDeg,
+        );
+      }
       _calibrated = true;
       _theta      = r.theta;
       _omega      = r.omega;
@@ -212,9 +233,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _returnCount = 0;
       _retWPico = 0; _retTau = 0; _retAAtq = 0;
       _retDeviations = null;
-      _alert = false;
+      _alert    = false;
+      _inReturn = false;
       _returnRows.clear();
     });
+  }
+
+  void _newBateria() {
+    setState(() {
+      _bateriaPse        = 5;
+      _bateriaSpasticity = 5;
+      _bateriaStep       = 0;
+      _onboardStep       = _OnboardStep.bateriaQuick;
+    });
+  }
+
+  void _commitBateria() {
+    widget.session.newBateria(pse: _bateriaPse, spasticity: _bateriaSpasticity);
+    setState(() => _onboardStep = null);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -268,6 +304,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildPseScreen()
           else if (_onboardStep == _OnboardStep.spasticity)
             _buildSpasticityScreen()
+          else if (_onboardStep == _OnboardStep.bateriaQuick)
+            _buildBateriaQuickScreen()
           else if (!_staticCalibDone)
             _buildStaticCalibOverlay()
           else if (!_calibrated)
@@ -289,21 +327,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(width: 8),
         _alertChip(),
-        const Spacer(),
-        if (widget.session.isActive)
-          Text(widget.session.label,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF546E7A))),
         const SizedBox(width: 8),
+        _returnChip(),
+        const Spacer(),
         TextButton(
           onPressed: _newSession,
           style: TextButton.styleFrom(
-            backgroundColor: const Color(0xFF1565C0),
+            backgroundColor: const Color(0xFF0D47A1),
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           ),
-          child: Text(widget.session.isActive ? '⊕ Nova Sessão' : '⊕ Iniciar',
-            style: const TextStyle(fontSize: 12)),
+          child: const Text('Novo Treino', style: TextStyle(fontSize: 11)),
         ),
+        if (widget.session.isActive) ...[
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: _newBateria,
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            child: const Text('Nova Bateria', style: TextStyle(fontSize: 11)),
+          ),
+        ],
       ],
     );
   }
@@ -312,9 +359,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_retDeviations == null) {
       return _chip('—', const Color(0xFF263238), const Color(0xFF90A4AE));
     }
-    if (_alert) return _chip('⚠ ALERTA', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
+    if (_alert) return _chip('ALERTA', const Color(0xFFB71C1C), const Color(0xFFFFCDD2));
     return _chip('OK', const Color(0xFF1B5E20), const Color(0xFFA5D6A7));
   }
+
+  Widget _returnChip() => _chip(
+    _inReturn ? 'RETORNO' : 'CORRIDA',
+    _inReturn ? const Color(0xFF0D2137) : const Color(0xFF1B3A1B),
+    _inReturn ? const Color(0xFF90CAF9) : const Color(0xFFA5D6A7),
+  );
 
   Widget _chip(String label, Color bg, Color fg) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -432,39 +485,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
     child: Container(
       color: Colors.black87,
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _onboardHeader('1 / 4', 'Atleta'),
-              const SizedBox(height: 32),
-              TextField(
-                controller: _nameCtrl,
-                autofocus: true,
-                textCapitalization: TextCapitalization.words,
-                style: const TextStyle(fontSize: 20, color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Nome do atleta',
-                  hintStyle: const TextStyle(color: Color(0xFF546E7A)),
-                  filled: true,
-                  fillColor: const Color(0xFF1E1E1E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: Color(0xFF42A5F5)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 2),
-                  ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(32, 32, 32, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _onboardHeader('1 / 4', 'Atleta'),
+                    const SizedBox(height: 32),
+                    TextField(
+                      controller: _nameCtrl,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.words,
+                      style: const TextStyle(fontSize: 20, color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Nome do atleta',
+                        hintStyle: const TextStyle(color: Color(0xFF546E7A)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E1E1E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: const BorderSide(color: Color(0xFF42A5F5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 2),
+                        ),
+                      ),
+                      onSubmitted: (_) => _goPlacement(),
+                    ),
+                  ],
                 ),
-                onSubmitted: (_) => _goPlacement(),
               ),
-              const SizedBox(height: 32),
-              _nextButton('PRÓXIMO →', _goPlacement),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 8, 32, 16),
+              child: _nextButton('PROXIMO', _goPlacement),
+            ),
+          ],
         ),
       ),
     ),
@@ -478,67 +539,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
     child: Container(
       color: Colors.black87,
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _onboardHeader('2 / 4', 'Posicionamento do Sensor'),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  border: Border.all(color: const Color(0xFF2C2C2C)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(32, 24, 32, 8),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    ColorFiltered(
-                      // Maps white bg → #1E1E1E, black lines → #42A5F5
-                      colorFilter: const ColorFilter.matrix([
-                        -0.141, 0,      0,      0, 66,
-                         0,    -0.529,  0,      0, 165,
-                         0,     0,     -0.843,  0, 245,
-                         0,     0,      0,      1, 0,
-                      ]),
-                      child: Image.asset(
-                        'assets/images/sensor_placement.png',
-                        height: 180,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Fixe o sensor na tíbia',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                        color: Color(0xFFCFD8DC)),
-                      textAlign: TextAlign.center),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Coloque o sensor na face anterior da tíbia,\n'
-                      'aproximadamente a 5 cm abaixo do joelho.\n'
-                      'Certifique-se de que está bem fixo.',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF90A4AE),
-                        height: 1.6),
-                      textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
+                    _onboardHeader('2 / 4', 'Posicionamento do Sensor'),
+                    const SizedBox(height: 24),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D2137),
-                        borderRadius: BorderRadius.circular(4),
+                        color: const Color(0xFF1E1E1E),
+                        border: Border.all(color: const Color(0xFF2C2C2C)),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text('Eixo Y do giroscópio = plano sagital',
-                        style: TextStyle(fontSize: 11, color: Color(0xFF42A5F5),
-                          fontFamily: 'monospace')),
+                      child: Column(
+                        children: [
+                          ColorFiltered(
+                            colorFilter: const ColorFilter.matrix([
+                              -0.141, 0,      0,      0, 66,
+                               0,    -0.529,  0,      0, 165,
+                               0,     0,     -0.843,  0, 245,
+                               0,     0,      0,      1, 0,
+                            ]),
+                            child: Image.asset(
+                              'assets/images/sensor_placement.png',
+                              height: 180,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('Fixe o sensor na tíbia',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                              color: Color(0xFFCFD8DC)),
+                            textAlign: TextAlign.center),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Coloque o sensor na face anterior da tíbia,\n'
+                            'aproximadamente a 5 cm abaixo do joelho.\n'
+                            'Certifique-se de que está bem fixo.',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF90A4AE),
+                              height: 1.6),
+                            textAlign: TextAlign.center),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0D2137),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('Eixo Y do giroscópio = plano sagital',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF42A5F5),
+                                fontFamily: 'monospace')),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-              _nextButton('PRÓXIMO →', _goPse),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 8, 32, 16),
+              child: _nextButton('PROXIMO', _goPse),
+            ),
+          ],
         ),
       ),
     ),
@@ -621,6 +689,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onSelect:    (v) => setState(() => _spasticity = v),
       buttonLabel: 'INICIAR SESSÃO →',
       onNext:      _commitSession,
+    );
+  }
+
+  // ── Nova Bateria: quick 2-step flow ───────────────────────────────────────
+
+  Widget _buildBateriaQuickScreen() {
+    if (_bateriaStep == 0) {
+      final options = [
+        (v: 1,  color: _pseColor(1),  label: 'ATIVIDADE MUITO LEVE',
+          desc: 'Quase nenhum esforço, mas mais do que dormir, ver TV, etc.'),
+        (v: 2,  color: _pseColor(2),  label: 'ATIVIDADE LEVE',
+          desc: 'Parece que podemos manter durante horas. Fácil de respirar e manter uma conversa.'),
+        (v: 3,  color: _pseColor(3),  label: 'ATIVIDADE LEVE',
+          desc: 'Parece que podemos manter durante horas. Fácil de respirar e manter uma conversa.'),
+        (v: 4,  color: _pseColor(4),  label: 'ATIVIDADE MODERADA',
+          desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+        (v: 5,  color: _pseColor(5),  label: 'ATIVIDADE MODERADA',
+          desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+        (v: 6,  color: _pseColor(6),  label: 'ATIVIDADE MODERADA',
+          desc: 'Respirar profundo, posso manter uma conversa curta. Ainda um pouco confortável, mas cada vez mais desafiador.'),
+        (v: 7,  color: _pseColor(7),  label: 'ATIVIDADE VIGOROSA',
+          desc: 'No limite do desconfortável. Falta de ar, consigo falar uma frase.'),
+        (v: 8,  color: _pseColor(8),  label: 'ATIVIDADE VIGOROSA',
+          desc: 'No limite do desconfortável. Falta de ar, consigo falar uma frase.'),
+        (v: 9,  color: _pseColor(9),  label: 'ATIVIDADE MUITO DIFÍCIL',
+          desc: 'Muito difícil manter a intensidade do exercício. Mal consigo respirar e falar apenas algumas palavras.'),
+        (v: 10, color: _pseColor(10), label: 'ATIVIDADE DE ESFORÇO MÁXIMO',
+          desc: 'É quase impossível continuar. Completamente sem fôlego, incapaz de falar. Não é possível manter por mais tempo.'),
+      ];
+      return _buildScaleScreen(
+        step:        '1 / 2',
+        title:       'PSE — Nova Bateria',
+        subtitle:    'Percepção Subjetiva do Esforço da bateria anterior.',
+        options:     options,
+        selected:    _bateriaPse,
+        onSelect:    (v) => setState(() => _bateriaPse = v),
+        buttonLabel: 'PROXIMO',
+        onNext:      () => setState(() => _bateriaStep = 1),
+      );
+    }
+    final options = [
+      (v: 0,  color: _spasticityColor(0),  label: 'SEM ESPASTICIDADE',
+        desc: 'Nenhuma rigidez ou resistência ao movimento.'),
+      (v: 1,  color: _spasticityColor(1),  label: 'ESPASTICIDADE MÍNIMA',
+        desc: 'Ligeira resistência ao movimento. Quase imperceptível.'),
+      (v: 2,  color: _spasticityColor(2),  label: 'ESPASTICIDADE MÍNIMA',
+        desc: 'Ligeira resistência ao movimento. Quase imperceptível.'),
+      (v: 3,  color: _spasticityColor(3),  label: 'ESPASTICIDADE LEVE',
+        desc: 'Resistência notável, mas não interfere significativamente nas atividades.'),
+      (v: 4,  color: _spasticityColor(4),  label: 'ESPASTICIDADE LEVE',
+        desc: 'Resistência notável, mas não interfere significativamente nas atividades.'),
+      (v: 5,  color: _spasticityColor(5),  label: 'ESPASTICIDADE MODERADA',
+        desc: 'Resistência moderada ao movimento. Pode causar algum desconforto.'),
+      (v: 6,  color: _spasticityColor(6),  label: 'ESPASTICIDADE MODERADA',
+        desc: 'Resistência moderada ao movimento. Pode causar algum desconforto.'),
+      (v: 7,  color: _spasticityColor(7),  label: 'ESPASTICIDADE SEVERA',
+        desc: 'Resistência forte. Movimento significativamente limitado.'),
+      (v: 8,  color: _spasticityColor(8),  label: 'ESPASTICIDADE SEVERA',
+        desc: 'Resistência forte. Movimento significativamente limitado.'),
+      (v: 9,  color: _spasticityColor(9),  label: 'ESPASTICIDADE MUITO SEVERA',
+        desc: 'Resistência extrema. Movimento muito difícil.'),
+      (v: 10, color: _spasticityColor(10), label: 'ESPASTICIDADE MUITO SEVERA',
+        desc: 'Resistência extrema. Movimento muito difícil ou impossível.'),
+    ];
+    return _buildScaleScreen(
+      step:        '2 / 2',
+      title:       'Espasticidade — Nova Bateria',
+      subtitle:    'Rigidez percebida nesta bateria.',
+      options:     options,
+      selected:    _bateriaSpasticity,
+      onSelect:    (v) => setState(() => _bateriaSpasticity = v),
+      buttonLabel: 'INICIAR BATERIA',
+      onNext:      _commitBateria,
     );
   }
 

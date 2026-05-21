@@ -21,6 +21,7 @@ void main() async {
   );
   final udp     = UdpService(pipeline);
   final session = SessionService();
+  session.attachRawStream(udp.rawPackets);
   runApp(Paia3App(udp: udp, session: session, pipeline: pipeline));
 }
 

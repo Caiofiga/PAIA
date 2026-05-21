@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:paia/models/pipeline_result.dart';
+import 'package:paia/models/sensor_packet.dart';
 import 'package:paia/services/packet_parser.dart';
 import 'package:paia/services/pipeline_service.dart';
 
@@ -10,9 +11,11 @@ class UdpService {
   final PipelineService _pipeline;
   RawDatagramSocket? _socket;
   final _controller = StreamController<PipelineResult>.broadcast();
+  final _rawCtrl    = StreamController<({double timeS, SensorPacket pkt})>.broadcast();
   int? _firstTsMs;
 
-  Stream<PipelineResult> get results => _controller.stream;
+  Stream<PipelineResult> get results    => _controller.stream;
+  Stream<({double timeS, SensorPacket pkt})> get rawPackets => _rawCtrl.stream;
 
   UdpService(this._pipeline);
 
@@ -33,9 +36,12 @@ class UdpService {
 
     _firstTsMs ??= pkt.tsMsRaw;
     final normTsMs = pkt.tsMsRaw - _firstTsMs!;
+    final timeS    = normTsMs / 1000.0;
+
+    _rawCtrl.add((timeS: timeS, pkt: pkt));
 
     final result = _pipeline.process(
-      normTsMs / 1000.0,
+      timeS,
       pkt.ax0, pkt.ay0, pkt.az0,
       pkt.gx0, pkt.gy0, pkt.gz0,
       pkt.ax1, pkt.ay1, pkt.az1,
@@ -52,5 +58,6 @@ class UdpService {
   void dispose() {
     stop();
     _controller.close();
+    _rawCtrl.close();
   }
 }

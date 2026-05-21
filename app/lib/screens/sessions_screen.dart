@@ -349,6 +349,16 @@ class _SessionCard extends StatelessWidget {
 
 // ── Detail screen ──────────────────────────────────────────────────────────
 
+typedef _BatteryRow = ({
+  int    id,
+  int    pse,
+  int    spasticity,
+  double medOmega,
+  double medTau,
+  double medAlpha,
+  int    strideCount,
+});
+
 class SessionDetailScreen extends StatefulWidget {
   final SessionRecord  record;
   final SessionService service;
@@ -366,6 +376,7 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   late List<StrideRow> _strides;
   StreamSubscription<StrideData>? _sub;
+  List<_BatteryRow> _batteries = [];
 
   @override
   void initState() {
@@ -383,12 +394,74 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         )));
       });
     }
+    _parseBatteries();
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _parseBatteries() async {
+    final sp = widget.record.filePath;
+    final rp = sp.endsWith('_strides.csv')
+        ? sp.replaceFirst('_strides.csv', '_returns.csv')
+        : sp.replaceFirst('.csv', '_returns.csv');
+    final f = File(rp);
+    if (!await f.exists()) return;
+
+    final lines = await f.readAsLines();
+
+    final meta = <int, (int pse, int spasticity)>{};
+    final m = widget.record.metadata;
+    if (m != null) meta[1] = (m.pse, m.spasticity);
+
+    // (bateriaId, omega, tau, alpha)
+    final rows = <(int, double, double, double)>[];
+    for (final line in lines) {
+      if (line.startsWith('# bateria:')) {
+        final nums = RegExp(r'\d+')
+            .allMatches(line)
+            .map((x) => int.parse(x.group(0)!))
+            .toList();
+        if (nums.length >= 3) meta[nums[0]] = (nums[1], nums[2]);
+        continue;
+      }
+      if (line.startsWith('#') || line.startsWith('stride')) continue;
+      final cols = line.split(',');
+      if (cols.length < 6) continue;
+      try {
+        rows.add((
+          int.parse(cols[5].trim()),
+          double.parse(cols[2].trim()),
+          double.parse(cols[3].trim()),
+          double.parse(cols[4].trim()),
+        ));
+      } catch (_) { continue; }
+    }
+
+    // Group by battery id
+    final grouped = <int, List<(double, double, double)>>{};
+    for (final r in rows) {
+      grouped.putIfAbsent(r.$1, () => []).add((r.$2, r.$3, r.$4));
+    }
+
+    final result = <_BatteryRow>[];
+    for (final id in (grouped.keys.toList()..sort())) {
+      final g     = grouped[id]!;
+      final bMeta = meta[id];
+      result.add((
+        id:          id,
+        pse:         bMeta?.$1 ?? 0,
+        spasticity:  bMeta?.$2 ?? 0,
+        medOmega:    _median(g.map((r) => r.$1).toList()),
+        medTau:      _median(g.map((r) => r.$2).toList()),
+        medAlpha:    _median(g.map((r) => r.$3).toList()),
+        strideCount: g.length,
+      ));
+    }
+    if (mounted) setState(() => _batteries = result);
   }
 
   static const int _stridesPerReturn = 6;
@@ -448,10 +521,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final strides = _strides;
-    final returns = _computeReturns(strides);
-    final last    = strides.isNotEmpty ? strides.last : null;
-    final isActive = widget.service.isCurrentSession(widget.record.fileName);
+    final strides    = _strides;
+    final returns    = _computeReturns(strides);
+    final last       = strides.isNotEmpty ? strides.last : null;
+    final isActive   = widget.service.isCurrentSession(widget.record.fileName);
+    final meanOmega  = strides.isEmpty ? 0.0 : strides.map((s) => s.omegaPico).reduce((a, b) => a + b) / strides.length;
+    final meanTau    = strides.isEmpty ? 0.0 : strides.map((s) => s.tauStPct ).reduce((a, b) => a + b) / strides.length;
+    final meanAlpha  = strides.isEmpty ? 0.0 : strides.map((s) => s.alphaAtq ).reduce((a, b) => a + b) / strides.length;
+    final durationS  = strides.length > 1 ? strides.last.timeS - strides.first.timeS : 0.0;
+    final alertCount = returns.where((r) => r.alert).length;
 
     return Scaffold(
       backgroundColor: const Color(0xFF111111),
@@ -495,9 +573,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         children: [
           Wrap(spacing: 8, runSpacing: 8, children: [
             _readout('PASSADAS',   '${strides.length}',             ''),
+            _readout('DURAÇÃO',    _formatDuration(durationS),      ''),
             _readout('ωpico últ.', last != null ? last.omegaPico.toStringAsFixed(1) : '—', '°/s'),
             _readout('τst% últ.',  last != null ? last.tauStPct.toStringAsFixed(1)  : '—', '%'),
             _readout('αatq últ.',  last != null ? last.alphaAtq.toStringAsFixed(1)  : '—', '°'),
+            if (strides.isNotEmpty) ...[
+              _readout('ωpico méd.', meanOmega.toStringAsFixed(1), '°/s'),
+              _readout('τst% méd.',  meanTau.toStringAsFixed(1),   '%'),
+              _readout('αatq méd.',  meanAlpha.toStringAsFixed(1), '°'),
+            ],
             if (widget.record.metadata != null) ...[
               _readout('PSE',          '${widget.record.metadata!.pse}',         '/10'),
               _readout('ESPASTICIDADE', '${widget.record.metadata!.spasticity}', '/10'),
@@ -517,11 +601,95 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             strides.map((s) => FlSpot(s.stride.toDouble(), s.alphaAtq)).toList(),
             const Color(0xFFFFA726)),
           const SizedBox(height: 12),
-          if (returns.isNotEmpty) ReturnTable(rows: returns),
+          if (returns.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                alertCount > 0
+                    ? '$alertCount de ${returns.length} retornos com deterioração'
+                    : '${returns.length} retornos — sem deterioração detetada',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: alertCount > 0
+                      ? const Color(0xFFEF9A9A)
+                      : const Color(0xFFA5D6A7),
+                ),
+              ),
+            ),
+            ReturnTable(rows: returns),
+          ],
+          if (_batteries.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('BATERIAS',
+              style: TextStyle(fontSize: 11, color: Color(0xFF78909C), letterSpacing: 1.0)),
+            const SizedBox(height: 8),
+            ..._batteries.map(_batteryCard),
+          ],
         ],
       ),
     );
   }
+
+  String _formatDuration(double s) {
+    final m   = (s ~/ 60).toString().padLeft(2, '0');
+    final sec = (s % 60).toInt().toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+
+  Widget _batteryCard(_BatteryRow b) => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+    decoration: BoxDecoration(
+      color: const Color(0xFF1E1E1E),
+      border: Border.all(color: const Color(0xFF2C2C2C)),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D2137),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          alignment: Alignment.center,
+          child: Text('${b.id}',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+              color: Color(0xFF42A5F5))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Wrap(spacing: 16, runSpacing: 4, children: [
+            _compactStat('ωpico', '${b.medOmega.toStringAsFixed(1)} °/s'),
+            _compactStat('τst%',  '${b.medTau.toStringAsFixed(1)} %'),
+            _compactStat('αatq',  '${b.medAlpha.toStringAsFixed(1)} °'),
+            _compactStat('retornos', '${b.strideCount}'),
+          ]),
+        ),
+        if (b.pse > 0) Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('PSE ${b.pse}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
+            Text('Esp ${b.spasticity}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF78909C))),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Widget _compactStat(String label, String value) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(label, style: const TextStyle(fontSize: 9, color: Color(0xFF546E7A),
+        letterSpacing: 0.5)),
+      Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold,
+        color: Color(0xFFCFD8DC))),
+    ],
+  );
 
   Widget _readout(String label, String value, String unit) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

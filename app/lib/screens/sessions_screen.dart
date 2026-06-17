@@ -355,7 +355,7 @@ typedef _BatteryRow = ({
   int    spasticity,
   double medOmega,
   double medTau,
-  double medAlpha,
+  double medDorsi,
   int    strideCount,
 });
 
@@ -390,7 +390,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           timeS:     s.elapsedS,
           omegaPico: s.omegaPico,
           tauStPct:  s.tauStPct,
-          alphaAtq:  s.alphaAtq,
+          dorsiflex: s.dorsiflex,
         )));
       });
     }
@@ -457,7 +457,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         spasticity:  bMeta?.$2 ?? 0,
         medOmega:    _median(g.map((r) => r.$1).toList()),
         medTau:      _median(g.map((r) => r.$2).toList()),
-        medAlpha:    _median(g.map((r) => r.$3).toList()),
+        medDorsi:    _median(g.map((r) => r.$3).toList()),
         strideCount: g.length,
       ));
     }
@@ -482,7 +482,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final medians = groups.map((g) => [
       _median(g.map((s) => s.omegaPico).toList()),
       _median(g.map((s) => s.tauStPct ).toList()),
-      _median(g.map((s) => s.alphaAtq ).toList()),
+      _median(g.map((s) => s.dorsiflex).toList()),
     ]).toList();
 
     final bMean = List.generate(3, (c) {
@@ -512,7 +512,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         n:         i + 1,
         omegaPico: double.parse(medians[i][0].toStringAsFixed(2)),
         tauStPct:  double.parse(medians[i][1].toStringAsFixed(2)),
-        alphaAtq:  double.parse(medians[i][2].toStringAsFixed(2)),
+        dorsiflex: double.parse(medians[i][2].toStringAsFixed(2)),
         deviations: devs,
         alert:     alert,
       );
@@ -527,7 +527,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final isActive   = widget.service.isCurrentSession(widget.record.fileName);
     final meanOmega  = strides.isEmpty ? 0.0 : strides.map((s) => s.omegaPico).reduce((a, b) => a + b) / strides.length;
     final meanTau    = strides.isEmpty ? 0.0 : strides.map((s) => s.tauStPct ).reduce((a, b) => a + b) / strides.length;
-    final meanAlpha  = strides.isEmpty ? 0.0 : strides.map((s) => s.alphaAtq ).reduce((a, b) => a + b) / strides.length;
+    final meanDorsi  = strides.isEmpty ? 0.0 : strides.map((s) => s.dorsiflex).reduce((a, b) => a + b) / strides.length;
     final durationS  = strides.length > 1 ? strides.last.timeS - strides.first.timeS : 0.0;
     final alertCount = returns.where((r) => r.alert).length;
 
@@ -576,11 +576,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             _readout('DURAÇÃO',    _formatDuration(durationS),      ''),
             _readout('ωpico últ.', last != null ? last.omegaPico.toStringAsFixed(1) : '—', '°/s'),
             _readout('τst% últ.',  last != null ? last.tauStPct.toStringAsFixed(1)  : '—', '%'),
-            _readout('αatq últ.',  last != null ? last.alphaAtq.toStringAsFixed(1)  : '—', '°'),
+            _readout('δDF últ.',   last != null ? last.dorsiflex.toStringAsFixed(1) : '—', '°'),
             if (strides.isNotEmpty) ...[
               _readout('ωpico méd.', meanOmega.toStringAsFixed(1), '°/s'),
               _readout('τst% méd.',  meanTau.toStringAsFixed(1),   '%'),
-              _readout('αatq méd.',  meanAlpha.toStringAsFixed(1), '°'),
+              _readout('δDF méd.',   meanDorsi.toStringAsFixed(1), '°'),
             ],
             if (widget.record.metadata != null) ...[
               _readout('PSE',          '${widget.record.metadata!.pse}',         '/10'),
@@ -597,8 +597,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             strides.map((s) => FlSpot(s.stride.toDouble(), s.tauStPct)).toList(),
             const Color(0xFF66BB6A)),
           const SizedBox(height: 10),
-          _chart('αatq — ÂNGULO DE ATAQUE (°)',
-            strides.map((s) => FlSpot(s.stride.toDouble(), s.alphaAtq)).toList(),
+          _chart('δDF — DORSIFLEXÃO (°)',
+            strides.map((s) => FlSpot(s.stride.toDouble(), s.dorsiflex)).toList(),
             const Color(0xFFFFA726)),
           const SizedBox(height: 12),
           if (returns.isNotEmpty) ...[
@@ -662,7 +662,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           child: Wrap(spacing: 16, runSpacing: 4, children: [
             _compactStat('ωpico', '${b.medOmega.toStringAsFixed(1)} °/s'),
             _compactStat('τst%',  '${b.medTau.toStringAsFixed(1)} %'),
-            _compactStat('αatq',  '${b.medAlpha.toStringAsFixed(1)} °'),
+            _compactStat('δDF',   '${b.medDorsi.toStringAsFixed(1)} °'),
             _compactStat('retornos', '${b.strideCount}'),
           ]),
         ),

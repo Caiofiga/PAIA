@@ -69,7 +69,7 @@ class SessionsRepository {
             timeS:     double.parse(cols[1].trim()),
             omegaPico: double.parse(cols[2].trim()),
             tauStPct:  double.parse(cols[3].trim()),
-            alphaAtq:  double.parse(cols[4].trim()),
+            dorsiflex: double.parse(cols[4].trim()),
           ));
         } catch (_) { continue; }
       }
@@ -121,10 +121,10 @@ class SessionsRepository {
         return CalibBaseline(
           omegaMean:   double.parse(cols[0].trim()),
           tauMean:     double.parse(cols[1].trim()),
-          alphaMean:   double.parse(cols[2].trim()),
+          dorsiMean:   double.parse(cols[2].trim()),
           omegaStd:    double.parse(cols[3].trim()),
           tauStd:      double.parse(cols[4].trim()),
-          alphaStd:    double.parse(cols[5].trim()),
+          dorsiStd:    double.parse(cols[5].trim()),
           gravityG:    double.parse(cols[6].trim()),
           thetaRefDeg: double.parse(cols[7].trim()),
         );

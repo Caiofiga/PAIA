@@ -13,8 +13,20 @@ bool ShittyIMU::begin() {
 
   // Wake up the clone chip
   _wirePort->beginTransmission(_addr);
-  _wirePort->write(0x6B); 
-  _wirePort->write(0x00);    
+  _wirePort->write(0x6B);
+  _wirePort->write(0x00);
+  if (_wirePort->endTransmission() != 0) return false;
+
+  // ACCEL_CONFIG: AFS_SEL=1 → ±4g (8192 LSB/g)
+  _wirePort->beginTransmission(_addr);
+  _wirePort->write(0x1C);
+  _wirePort->write(0x08);
+  if (_wirePort->endTransmission() != 0) return false;
+
+  // GYRO_CONFIG: FS_SEL=1 → ±500°/s (65.5 LSB/°/s)
+  _wirePort->beginTransmission(_addr);
+  _wirePort->write(0x1B);
+  _wirePort->write(0x08);
   return (_wirePort->endTransmission() == 0);
 }
 

@@ -1,14 +1,14 @@
 class StrideData {
   final double omegaPico;   // deg/s
   final double tauStPct;    // %
-  final double alphaAtq;    // deg
+  final double dorsiflex;   // deg — tibia minus foot pitch at IC
   final int strideNum;
   final double elapsedS;
 
   const StrideData({
     required this.omegaPico,
     required this.tauStPct,
-    required this.alphaAtq,
+    required this.dorsiflex,
     required this.strideNum,
     required this.elapsedS,
   });
@@ -18,15 +18,15 @@ class ReturnData {
   final int n;
   final double omegaPico;
   final double tauStPct;
-  final double alphaAtq;
-  final List<double>? deviations; // [Δω, Δτ, Δα] positive = worse
+  final double dorsiflex;                // deg — dorsiflexion angle
+  final List<double>? deviations;        // [Δω, Δτ, ΔDF] positive = worse
   final bool alert;
 
   const ReturnData({
     required this.n,
     required this.omegaPico,
     required this.tauStPct,
-    required this.alphaAtq,
+    required this.dorsiflex,
     this.deviations,
     required this.alert,
   });

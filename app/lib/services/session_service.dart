@@ -141,8 +141,8 @@ class SessionService {
 
     _calibSink!
       ..write(metaLines)
-      ..writeln('omega_mean,tau_mean,alpha_mean,'
-                'omega_std,tau_std,alpha_std,'
+      ..writeln('omega_mean,tau_mean,dorsi_mean,'
+                'omega_std,tau_std,dorsi_std,'
                 'gravity_g,theta_ref_deg');
 
     _rawSink!
@@ -154,11 +154,11 @@ class SessionService {
 
     _stridesSink!
       ..write(metaLines)
-      ..writeln('stride,time_s,omega_pico_degs,tau_st_pct,alpha_atq_deg,mode');
+      ..writeln('stride,time_s,omega_pico_degs,tau_st_pct,dorsiflex_deg,mode');
 
     _returnsSink!
       ..write(metaLines)
-      ..writeln('stride,time_s,omega_pico_degs,tau_st_pct,alpha_atq_deg,bateria');
+      ..writeln('stride,time_s,omega_pico_degs,tau_st_pct,dorsiflex_deg,bateria');
 
     _active = true;
 
@@ -221,7 +221,7 @@ class SessionService {
     _strideCount++;
     _stridesSink!.writeln(
       '$_strideCount,${s.elapsedS.toStringAsFixed(3)},'
-      '${s.omegaPico},${s.tauStPct},${s.alphaAtq},'
+      '${s.omegaPico},${s.tauStPct},${s.dorsiflex},'
       '$mode',
     );
 
@@ -229,7 +229,7 @@ class SessionService {
       _returnStrideCount++;
       _returnsSink!.writeln(
         '$_returnStrideCount,${s.elapsedS.toStringAsFixed(3)},'
-        '${s.omegaPico},${s.tauStPct},${s.alphaAtq},'
+        '${s.omegaPico},${s.tauStPct},${s.dorsiflex},'
         '$_currentBateria',
       );
     }

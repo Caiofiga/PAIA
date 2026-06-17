@@ -15,26 +15,26 @@ class SessionMetadata {
 class CalibBaseline {
   final double omegaMean;    // °/s  — ωpico baseline mean
   final double tauMean;      // %    — τst% baseline mean
-  final double alphaMean;    // °    — αatq baseline mean
+  final double dorsiMean;    // °    — dorsiflexion baseline mean
   final double omegaStd;     // °/s  — ωpico baseline std
   final double tauStd;       // %    — τst% baseline std
-  final double alphaStd;     // °    — αatq baseline std
+  final double dorsiStd;     // °    — dorsiflexion baseline std
   final double gravityG;     // g    — measured gravity magnitude
-  final double thetaRefDeg;  // °    — tibia reference angle
+  final double thetaRefDeg;  // °    — tibia reference angle (static calibration)
 
   const CalibBaseline({
     required this.omegaMean,
     required this.tauMean,
-    required this.alphaMean,
+    required this.dorsiMean,
     required this.omegaStd,
     required this.tauStd,
-    required this.alphaStd,
+    required this.dorsiStd,
     required this.gravityG,
     required this.thetaRefDeg,
   });
 
-  List<double> get mean => [omegaMean, tauMean, alphaMean];
-  List<double> get std  => [omegaStd,  tauStd,  alphaStd];
+  List<double> get mean => [omegaMean, tauMean, dorsiMean];
+  List<double> get std  => [omegaStd,  tauStd,  dorsiStd];
 }
 
 class StrideRow {
@@ -42,14 +42,14 @@ class StrideRow {
   final double timeS;
   final double omegaPico;
   final double tauStPct;
-  final double alphaAtq;
+  final double dorsiflex;   // deg — dorsiflexion angle at IC
 
   const StrideRow({
     required this.stride,
     required this.timeS,
     required this.omegaPico,
     required this.tauStPct,
-    required this.alphaAtq,
+    required this.dorsiflex,
   });
 }
 

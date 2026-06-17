@@ -77,14 +77,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Live telemetry
   double _theta = 0, _omega = 0, _accelNorm = 0;
-  double _wPico = 0, _tau   = 0, _aAtq      = 0;
+  double _wPico = 0, _tau   = 0, _dorsiflex = 0;
 
   final List<FlSpot> _thetaPts = [];
   final List<FlSpot> _omegaPts = [];
 
   // Return aggregation
   int    _returnCount    = 0;
-  double _retWPico = 0, _retTau = 0, _retAAtq = 0;
+  double _retWPico = 0, _retTau = 0, _retDorsiflex = 0;
   List<double>? _retDeviations;
   bool   _alert = false;
   final List<ReturnData> _returnRows = [];
@@ -173,18 +173,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (r.stride != null) {
         final s = r.stride!;
-        _wPico = s.omegaPico;
-        _tau   = s.tauStPct;
-        _aAtq  = s.alphaAtq;
+        _wPico     = s.omegaPico;
+        _tau       = s.tauStPct;
+        _dorsiflex = s.dorsiflex;
         if (widget.session.isActive) widget.session.logStride(s);
       }
 
       if (r.returnData != null) {
         final rd = r.returnData!;
-        _returnCount   = rd.n;
-        _retWPico      = rd.omegaPico;
-        _retTau        = rd.tauStPct;
-        _retAAtq       = rd.alphaAtq;
+        _returnCount    = rd.n;
+        _retWPico       = rd.omegaPico;
+        _retTau         = rd.tauStPct;
+        _retDorsiflex   = rd.dorsiflex;
         _retDeviations = rd.deviations;
         _alert         = rd.alert;
         _returnRows.add(rd);
@@ -231,7 +231,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _thetaPts.clear();
       _omegaPts.clear();
       _returnCount = 0;
-      _retWPico = 0; _retTau = 0; _retAAtq = 0;
+      _retWPico = 0; _retTau = 0; _retDorsiflex = 0;
       _retDeviations = null;
       _alert    = false;
       _inReturn = false;
@@ -389,12 +389,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildReadouts() => Wrap(
     spacing: 8, runSpacing: 8,
     children: [
-      ReadoutCard(label: 'θ ÂNGULO TÍBIA',    value: _theta.toStringAsFixed(1),     unit: '°'),
-      ReadoutCard(label: 'ω VEL. ANGULAR',    value: _omega.toStringAsFixed(1),     unit: '°/s'),
-      ReadoutCard(label: '|a| NORMA ACEL',    value: _accelNorm.toStringAsFixed(3), unit: 'g'),
-      ReadoutCard(label: 'ωpico ÚLT. PASSADA', value: _wPico.toStringAsFixed(1),   unit: '°/s'),
-      ReadoutCard(label: 'τst% ÚLT. PASSADA', value: _tau.toStringAsFixed(1),      unit: '%'),
-      ReadoutCard(label: 'αatq ÚLT. PASSADA', value: _aAtq.toStringAsFixed(1),     unit: '°'),
+      ReadoutCard(label: 'θ ÂNGULO TÍBIA',     value: _theta.toStringAsFixed(1),      unit: '°'),
+      ReadoutCard(label: 'ω VEL. ANGULAR',    value: _omega.toStringAsFixed(1),      unit: '°/s'),
+      ReadoutCard(label: '|a| NORMA ACEL',    value: _accelNorm.toStringAsFixed(3),  unit: 'g'),
+      ReadoutCard(label: 'ωpico ÚLT. PASSADA', value: _wPico.toStringAsFixed(1),    unit: '°/s'),
+      ReadoutCard(label: 'τst% ÚLT. PASSADA', value: _tau.toStringAsFixed(1),       unit: '%'),
+      ReadoutCard(label: 'δDF ÚLT. PASSADA',  value: _dorsiflex.toStringAsFixed(1), unit: '°'),
     ],
   );
 
@@ -415,12 +415,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
             _statBox('Retornos', '$_returnCount'),
-            _statBox('ωpico', _retWPico != 0 ? '${_retWPico.toStringAsFixed(1)} °/s' : '—'),
-            _statBox('τst%',  _retTau   != 0 ? '${_retTau.toStringAsFixed(1)} %'     : '—'),
-            _statBox('αatq',  _retAAtq  != 0 ? '${_retAAtq.toStringAsFixed(1)} °'    : '—'),
+            _statBox('ωpico', _retWPico     != 0 ? '${_retWPico.toStringAsFixed(1)} °/s'      : '—'),
+            _statBox('τst%',  _retTau       != 0 ? '${_retTau.toStringAsFixed(1)} %'          : '—'),
+            _statBox('δDF',   _retDorsiflex != 0 ? '${_retDorsiflex.toStringAsFixed(1)} °'    : '—'),
             _statBox('Δω',    devs != null ? devs[0].toStringAsFixed(2) : '—'),
             _statBox('Δτ',    devs != null ? devs[1].toStringAsFixed(2) : '—'),
-            _statBox('Δα',    devs != null ? devs[2].toStringAsFixed(2) : '—'),
+            _statBox('ΔDF',   devs != null ? devs[2].toStringAsFixed(2) : '—'),
           ]),
         ],
       ),

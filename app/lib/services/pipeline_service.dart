@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:paia/models/pipeline_result.dart';
+import 'package:paia/services/kalman_filter.dart';
 import 'package:paia/services/mahony_filter.dart';
 
 // ── Median filter ─────────────────────────────────────────────────────────────
@@ -75,9 +76,10 @@ class PipelineService {
   final int    calibStrides;
   final int    staticCalibSamples;
 
-  late final MahonyFilter      _filter;
+  late final MahonyFilter       _filter;
+  late final KalmanFilter       _kalman;   // foot IMU (IMU 1)
   late final _ButterworthFilter _butter;
-  late final List<_MedianFilter> _med;  // 6 channels: ax ay az gx gy gz
+  late final List<_MedianFilter> _med;     // 9 channels: [IMU0] ax ay az gx gy gz, [IMU1] ay az gy
 
   // Phase 0: static gravity calibration
   bool   _staticPhase          = true;
@@ -121,8 +123,9 @@ class PipelineService {
     this.staticCalibSamples = 200,
   }) {
     _filter = MahonyFilter(dt: 1.0 / sampleRate);
+    _kalman = KalmanFilter(dt: 1.0 / sampleRate);
     _butter = _ButterworthFilter();
-    _med    = List.generate(6, (_) => _MedianFilter(5));
+    _med    = List.generate(9, (_) => _MedianFilter(5));
   }
 
   PipelineResult process(
@@ -132,11 +135,10 @@ class PipelineService {
     int ax1, int ay1, int az1,
     int gx1, int gy1, int gz1,
   ) {
-    // Scale raw values
+    // ── IMU 0 (tibia) ──────────────────────────────────────────────────────
     final rawAx = ax0 * accelScale, rawAy = ay0 * accelScale, rawAz = az0 * accelScale;
     final rawGx = gx0 * gyroScale,  rawGy = gy0 * gyroScale,  rawGz = gz0 * gyroScale;
 
-    // Median filter on raw signals
     final fAx = _med[0].update(rawAx);
     final fAy = _med[1].update(rawAy);
     final fAz = _med[2].update(rawAz);
@@ -144,14 +146,19 @@ class PipelineService {
     final fGy = _med[4].update(rawGy);
     final fGz = _med[5].update(rawGz);
 
-    // Mahony sensor fusion → pitch angle (rad)
+    // Mahony fusion → tibia pitch (rad)
     final thetaRaw = _filter.update(fAx, fAy, fAz, fGx, fGy, fGz);
-
-    // Butterworth LP on angle
-    final theta = _butter.update(thetaRaw);
+    final theta    = _butter.update(thetaRaw);
 
     final omega     = [fGx, fGy, fGz][gyroAxis];
     final accelNorm = math.sqrt(fAx*fAx + fAy*fAy + fAz*fAz);
+
+    // ── IMU 1 (foot) — Kalman filter for dorsiflexion ─────────────────────
+    final fAy1 = _med[6].update(ay1 * accelScale);
+    final fAz1 = _med[7].update(az1 * accelScale);
+    final fGy1 = _med[8].update(gy1 * gyroScale);
+    final accAngleFoot = math.atan2(fAy1, fAz1);
+    final thetaFoot    = _kalman.update(fGy1, accAngleFoot);
 
     // ── Phase 0: static gravity calibration ──────────────────────────────
     if (_staticPhase) {
@@ -166,9 +173,9 @@ class PipelineService {
 
     // ── Phase 1: dynamic calibration (walking) ────────────────────────────
     if (!_calibrated) {
-      final stride = _segment(ts, theta, omega, accelNorm);
+      final stride = _segment(ts, theta, thetaFoot, omega, accelNorm);
       if (stride != null) {
-        _calibData.add([stride['omega_pico']!, stride['tau_st_pct']!, stride['alpha_atq']!]);
+        _calibData.add([stride['omega_pico']!, stride['tau_st_pct']!, stride['dorsiflex']!]);
         _calibCount++;
         if (_calibCount >= calibStrides) _finishDynamicCalibration();
       }
@@ -179,7 +186,7 @@ class PipelineService {
     }
 
     // ── Phase 2: live ─────────────────────────────────────────────────────
-    final stride = _segment(ts, theta, omega, accelNorm);
+    final stride = _segment(ts, theta, thetaFoot, omega, accelNorm);
     ReturnData? returnData;
 
     if (stride != null) {
@@ -187,7 +194,7 @@ class PipelineService {
       _returnStrideBuf.add({
         'omega_pico': stride['omega_pico']!,
         'tau_st_pct': stride['tau_st_pct']!,
-        'alpha_atq':  stride['alpha_atq']!,
+        'dorsiflex':  stride['dorsiflex']!,
       });
       if (_returnStrideBuf.length >= stridesPerReturn) {
         returnData = _aggregateReturn();
@@ -202,7 +209,7 @@ class PipelineService {
       stride: stride != null ? StrideData(
         omegaPico: stride['omega_pico']!,
         tauStPct:  stride['tau_st_pct']!,
-        alphaAtq:  stride['alpha_atq']!,
+        dorsiflex: stride['dorsiflex']!,
         strideNum: _strideNum,
         elapsedS:  ts,
       ) : null,
@@ -250,7 +257,7 @@ class PipelineService {
     return gyroSettled && accelSettled;
   }
 
-  Map<String, double>? _segment(double ts, double theta, double omega, double accelNorm) {
+  Map<String, double>? _segment(double ts, double theta, double thetaFoot, double omega, double accelNorm) {
     if (!_inSwing && _isSwingEntry(omega, accelNorm)) {
       _inSwing      = true;
       _swingStartTs = ts;
@@ -274,7 +281,7 @@ class PipelineService {
         final strideTime = ts - prevIc;
         final stanceTime = (strideTime - swingTime).clamp(0.0, strideTime);
         final tauStPct   = (stanceTime / strideTime * 100.0).clamp(0.0, 100.0);
-        final alphaAtq   = _toDeg(theta) - _thetaRef;
+        final dorsiflex  = _toDeg(theta - thetaFoot);
 
         if (!_isValidStride(omegaPicoDeg, tauStPct, strideTime)) return null;
 
@@ -283,7 +290,7 @@ class PipelineService {
         return {
           'omega_pico': double.parse(omegaPicoDeg.toStringAsFixed(2)),
           'tau_st_pct': double.parse(tauStPct.toStringAsFixed(2)),
-          'alpha_atq':  double.parse(alphaAtq.toStringAsFixed(2)),
+          'dorsiflex':  double.parse(dorsiflex.toStringAsFixed(2)),
         };
       }
     }
@@ -327,7 +334,7 @@ class PipelineService {
 
   ReturnData _aggregateReturn() {
     final data = _returnStrideBuf.map((s) =>
-      [s['omega_pico']!, s['tau_st_pct']!, s['alpha_atq']!]
+      [s['omega_pico']!, s['tau_st_pct']!, s['dorsiflex']!]
     ).toList();
 
     final medianVec = _colMedians(data);
@@ -350,7 +357,7 @@ class PipelineService {
       n:          _returnIndex,
       omegaPico:  double.parse(medianVec[0].toStringAsFixed(2)),
       tauStPct:   double.parse(medianVec[1].toStringAsFixed(2)),
-      alphaAtq:   double.parse(medianVec[2].toStringAsFixed(2)),
+      dorsiflex:  double.parse(medianVec[2].toStringAsFixed(2)),
       deviations: deviations,
       alert:      alert,
     );
@@ -396,6 +403,7 @@ class PipelineService {
 
   void resetStaticOnly() {
     _filter.reset();
+    _kalman.reset();
     _butter.reset();
     for (final f in _med) f.reset();
 
@@ -421,6 +429,7 @@ class PipelineService {
 
   void reset() {
     _filter.reset();
+    _kalman.reset();
     _butter.reset();
     for (final f in _med) f.reset();
 
